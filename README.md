@@ -122,8 +122,7 @@ without them, those tests skip and the rest of the suite still runs.
 
 ### Building the executable
 
-PyInstaller does not cross-compile, so the Windows build has to happen on
-Windows (or in the `windows-latest` CI job):
+On Windows (and in the `windows-latest` CI job, which is the reference build):
 
 ```
 pip install -r requirements-dev.txt
@@ -131,6 +130,21 @@ pyinstaller --noconfirm packaging/autobom.spec
 ```
 
 That produces a single-file `dist/AutoBOM.exe`.
+
+**From Linux**, without a Windows machine:
+
+```
+apt-get install wine64
+packaging/build-windows-exe.sh
+```
+
+PyInstaller cannot cross-compile, but it does not have to — the script runs a
+real Windows CPython under Wine, so PyInstaller emits a genuine PE executable.
+It fetches the interpreter from the `python-build-standalone` GitHub release
+assets rather than python.org, which egress policies often block.
+
+Either way the `.exe` is unsigned, so Windows SmartScreen warns on first launch
+until it builds reputation. Code signing is a separate step.
 
 ### Releasing
 
