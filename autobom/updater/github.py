@@ -83,9 +83,24 @@ def manifest_url() -> str:
     return os.environ.get(ENV_VAR, "").strip() or DEFAULT_MANIFEST_URL
 
 
+def _scheme(location: str) -> str:
+    """The URL scheme, treating a Windows drive letter as no scheme at all.
+
+    ``urlparse`` reads the ``C:`` of ``C:\\builds\\AutoBOM.exe`` as a scheme.
+    Any single letter is a drive, not a protocol -- getting this wrong rejects
+    every local path on Windows, which is the only platform this runs on.
+    """
+    scheme = urlparse(str(location)).scheme.lower()
+    return "" if len(scheme) < 2 else scheme
+
+
+def is_remote(location: str) -> bool:
+    return _scheme(location) in ("http", "https")
+
+
 def _read_source(location: str, timeout: int) -> bytes:
     """Read an https URL or a local/UNC path."""
-    if urlparse(location).scheme in ("http", "https"):
+    if is_remote(location):
         request = urllib.request.Request(
             location, headers={"User-Agent": f"AutoBOM/{version()}"}
         )
@@ -146,7 +161,9 @@ def download_asset(info: UpdateInfo, destination: Path) -> Path:
     A download that does not match the published checksum is deleted rather
     than left on disk where somebody might run it.
     """
-    if urlparse(info.url).scheme not in ("https", "file", ""):
+    # Plain paths (empty scheme, UNC shares, Windows drive letters) are a
+    # supported update source; a remote one must be encrypted.
+    if _scheme(info.url) not in ("https", "file", ""):
         raise ValueError("refusing to download an update over a non-HTTPS URL")
 
     destination = Path(destination)

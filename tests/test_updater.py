@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import urllib.error
+from pathlib import Path
 
 import pytest
 
@@ -128,7 +129,48 @@ class TestCheckForUpdate:
         assert check_for_update("https://example.invalid/latest.json") is None
 
 
+class TestSchemeDetection:
+    """A Windows drive letter must not be mistaken for a URL scheme.
+
+    urlparse reads the ``C:`` of ``C:\\builds\\AutoBOM.exe`` as scheme ``c``.
+    Treating that as a protocol rejects every local path on Windows -- which is
+    the only platform this ships on, and exactly where the UNC update source is
+    meant to work. These run identically on any OS.
+    """
+
+    @pytest.mark.parametrize(
+        "location",
+        [
+            "C:/Users/sam/AutoBOM.exe",
+            r"C:\builds\AutoBOM.exe",
+            r"\\server\share\AutoBOM\latest.json",
+            "/home/sam/AutoBOM.exe",
+            "relative/path.json",
+        ],
+    )
+    def test_local_paths_are_not_remote(self, location):
+        assert github.is_remote(location) is False
+
+    @pytest.mark.parametrize(
+        "location", ["https://example.invalid/a.exe", "http://example.invalid/a.exe"]
+    )
+    def test_urls_are_remote(self, location):
+        assert github.is_remote(location) is True
+
+
 class TestDownloadAsset:
+    @pytest.mark.parametrize(
+        "url", ["C:/builds/AutoBOM.exe", r"\\server\share\AutoBOM.exe"]
+    )
+    def test_local_and_unc_sources_are_permitted(self, url):
+        # Regression: these raised "non-HTTPS URL" on Windows only.
+        try:
+            download_asset(info(url=url), Path("unused"))
+        except ValueError as exc:
+            assert "non-HTTPS" not in str(exc)
+        except OSError:
+            pass  # the path does not exist; the scheme check is what matters
+
     def test_rejects_non_https(self, tmp_path):
         with pytest.raises(ValueError):
             download_asset(
