@@ -6,9 +6,10 @@ import argparse
 import sys
 from pathlib import Path
 
-from . import __version__
 from .core import process, select_sheets, write_workbook
 from .core.parser import looks_like_il
+from .core.selftest import run_selftest
+from .version import describe
 
 
 def split_inputs(paths: list[Path]) -> tuple[list[Path], list[Path]]:
@@ -29,13 +30,31 @@ def _collect(values: list[str]) -> list[Path]:
     return paths
 
 
+def _selftest() -> int:
+    """Prove this copy works, on a synthetic job needing no customer files."""
+    print(describe())
+    ok, report = run_selftest()
+    for line in report:
+        print(line)
+    print()
+    print("SELF-TEST PASSED" if ok else "SELF-TEST FAILED")
+    return 0 if ok else 1
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         prog="autobom",
         description="Process CNC sheet metal BOMs into a 5-sheet Excel workbook.",
     )
-    parser.add_argument("inputs", nargs="+", help="CSV files or directories of CSVs")
-    parser.add_argument("-o", "--output", required=True, help="destination .xlsx path")
+    parser.add_argument(
+        "inputs", nargs="*", help="CSV files or directories of CSVs"
+    )
+    parser.add_argument("-o", "--output", help="destination .xlsx path")
+    parser.add_argument(
+        "--selftest",
+        action="store_true",
+        help="verify this copy of AutoBOM end to end and exit",
+    )
     parser.add_argument(
         "--bom", action="append", default=[], help="explicitly mark a file as a bus section BOM"
     )
@@ -47,8 +66,16 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="write the workbook even when cross-check flags exist",
     )
-    parser.add_argument("--version", action="version", version=f"AutoBOM {__version__}")
+    parser.add_argument("--version", action="version", version=describe())
     args = parser.parse_args(argv)
+
+    if args.selftest:
+        return _selftest()
+
+    if not args.inputs:
+        parser.error("give at least one CSV file or directory (or use --selftest)")
+    if not args.output:
+        parser.error("-o/--output is required")
 
     boms, ils = split_inputs(_collect(args.inputs))
     boms.extend(Path(value) for value in args.bom)

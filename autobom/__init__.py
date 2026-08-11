@@ -1,10 +1,7 @@
 """AutoBOM - CNC sheet metal BOM processor."""
 
-from pathlib import Path
+from .version import build_id, build_info, describe, version
 
-_VERSION_FILE = Path(__file__).resolve().parent.parent / "VERSION"
+__version__ = version()
 
-try:
-    __version__ = _VERSION_FILE.read_text(encoding="utf-8").strip()
-except OSError:  # running from a frozen bundle without the source tree
-    __version__ = "0.0.0"
+__all__ = ["__version__", "build_id", "build_info", "describe", "version"]

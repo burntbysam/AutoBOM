@@ -1,12 +1,24 @@
-"""Check GitHub Releases for a newer AutoBOM build.
+"""Check for a newer AutoBOM build.
 
-The check is deliberately dependency-free (urllib only) and always fails soft:
-a shop machine with no internet must still start the app.
+The source is a small JSON manifest rather than the GitHub API. The API is rate
+limited per IP (a shop behind one NAT can exhaust it between them) and its
+"latest release" deliberately hides prereleases, so it is the wrong target for
+"the current Windows build". CI republishes the manifest and the executable to
+one fixed tag instead, and this polls that.
+
+The manifest may live at an https URL or a plain path -- a UNC share such as
+``\\\\server\\shared\\AutoBOM\\latest.json`` is usually what a shop wants, since
+it needs no GitHub access from the floor. Override with the
+``AUTOBOM_UPDATE_URL`` environment variable.
+
+Every failure is soft: a machine with no network must still start the app.
 """
 
 from __future__ import annotations
 
+import hashlib
 import json
+import os
 import re
 import ssl
 import urllib.error
@@ -15,36 +27,51 @@ from dataclasses import dataclass
 from pathlib import Path
 from urllib.parse import urlparse
 
-REPO = "burntbysam/AutoBOM"
-API_URL = f"https://api.github.com/repos/{REPO}/releases/latest"
-RELEASES_PAGE = f"https://github.com/{REPO}/releases/latest"
-TIMEOUT_SECONDS = 8
+from ..version import build_id, run_number, version
 
-_VERSION_RE = re.compile(r"(\d+)(?:\.(\d+))*")
+REPO = "burntbysam/AutoBOM"
+# The tag CI republishes on every build. Explicit, because /releases/latest/
+# excludes prereleases and would drift to any future tagged version.
+RELEASE_TAG = "windows-latest-build"
+RELEASE_PAGE = f"https://github.com/{REPO}/releases/tag/{RELEASE_TAG}"
+DEFAULT_MANIFEST_URL = (
+    f"https://github.com/{REPO}/releases/download/{RELEASE_TAG}/latest.json"
+)
+ENV_VAR = "AUTOBOM_UPDATE_URL"
+
+TIMEOUT_SECONDS = 8
+DOWNLOAD_TIMEOUT_SECONDS = 300
 
 
 @dataclass(frozen=True)
 class UpdateInfo:
     current_version: str
+    current_build_id: str
     latest_version: str
-    release_url: str
-    download_url: str | None
+    latest_build_id: str
+    url: str
+    sha256: str = ""
+    size: int = 0
     notes: str = ""
+    release_page: str = RELEASE_PAGE
 
     @property
     def available(self) -> bool:
-        return parse_version(self.latest_version) > parse_version(self.current_version)
+        """Newer version, or the same version rebuilt by a later CI run."""
+        latest, current = parse_version(self.latest_version), parse_version(
+            self.current_version
+        )
+        if latest > current:
+            return True
+        if latest < current:
+            return False
+        return run_number(self.latest_build_id) > run_number(self.current_build_id)
 
 
 def parse_version(text: str) -> tuple[int, ...]:
-    """Turn ``v1.2.3`` into ``(1, 2, 3)`` for ordering.
-
-    Unparseable text sorts lowest so a malformed tag never triggers a bogus
-    "update available" prompt.
-    """
-    cleaned = text.strip().lstrip("vV")
+    """Turn ``v1.2.3`` into ``(1, 2, 3)``. Unparseable text sorts lowest."""
     parts: list[int] = []
-    for chunk in cleaned.split("."):
+    for chunk in str(text).strip().lstrip("vV").split("."):
         match = re.match(r"\d+", chunk.strip())
         if match is None:
             break
@@ -52,61 +79,85 @@ def parse_version(text: str) -> tuple[int, ...]:
     return tuple(parts) if parts else (0,)
 
 
-def _asset_url(payload: dict) -> str | None:
-    """Prefer a Windows installer/executable asset, else the first asset."""
-    assets = payload.get("assets") or []
-    for suffix in (".exe", ".msi", ".zip"):
-        for asset in assets:
-            name = str(asset.get("name", "")).lower()
-            if name.endswith(suffix) and asset.get("browser_download_url"):
-                return asset["browser_download_url"]
-    for asset in assets:
-        if asset.get("browser_download_url"):
-            return asset["browser_download_url"]
-    return None
+def manifest_url() -> str:
+    return os.environ.get(ENV_VAR, "").strip() or DEFAULT_MANIFEST_URL
 
 
-def check_for_update(current_version: str, url: str = API_URL) -> UpdateInfo | None:
+def _read_source(location: str, timeout: int) -> bytes:
+    """Read an https URL or a local/UNC path."""
+    if urlparse(location).scheme in ("http", "https"):
+        request = urllib.request.Request(
+            location, headers={"User-Agent": f"AutoBOM/{version()}"}
+        )
+        with urllib.request.urlopen(request, timeout=timeout) as response:
+            return response.read()
+    return Path(location).read_bytes()
+
+
+def check_for_update(url: str | None = None) -> UpdateInfo | None:
     """Return update information, or ``None`` when the check cannot complete."""
-    request = urllib.request.Request(
-        url,
-        headers={
-            "Accept": "application/vnd.github+json",
-            "User-Agent": f"AutoBOM/{current_version}",
-        },
-    )
+    location = url or manifest_url()
     try:
-        with urllib.request.urlopen(request, timeout=TIMEOUT_SECONDS) as response:
-            payload = json.loads(response.read().decode("utf-8"))
-    except (urllib.error.URLError, ssl.SSLError, TimeoutError, ValueError, OSError):
+        payload = json.loads(_read_source(location, TIMEOUT_SECONDS).decode("utf-8"))
+    except (
+        urllib.error.URLError,
+        ssl.SSLError,
+        TimeoutError,
+        ValueError,
+        OSError,
+    ):
+        return None
+    if not isinstance(payload, dict):
         return None
 
-    tag = str(payload.get("tag_name") or payload.get("name") or "").strip()
-    if not tag:
+    latest_version = str(payload.get("version") or "").strip()
+    download_url = str(payload.get("url") or "").strip()
+    if not latest_version or not download_url:
         return None
+
+    try:
+        size = int(payload.get("size") or 0)
+    except (TypeError, ValueError):
+        size = 0
 
     return UpdateInfo(
-        current_version=current_version,
-        latest_version=tag,
-        release_url=str(payload.get("html_url") or RELEASES_PAGE),
-        download_url=_asset_url(payload),
-        notes=str(payload.get("body") or "").strip(),
+        current_version=version(),
+        current_build_id=build_id(),
+        latest_version=latest_version,
+        latest_build_id=str(payload.get("build_id") or ""),
+        url=download_url,
+        sha256=str(payload.get("sha256") or "").strip().lower(),
+        size=size,
+        notes=str(payload.get("notes") or "").strip(),
     )
 
 
-def download_asset(url: str, destination: Path) -> Path:
-    """Download a release asset to ``destination``.
+def sha256_of(path: Path) -> str:
+    digest = hashlib.sha256()
+    with Path(path).open("rb") as handle:
+        for block in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(block)
+    return digest.hexdigest()
 
-    The app does not replace its own executable in place -- it downloads
-    alongside and tells the user where the new build is, which keeps a failed
-    update from leaving the shop without a working tool.
+
+def download_asset(info: UpdateInfo, destination: Path) -> Path:
+    """Download the new build and verify it before handing back the path.
+
+    A download that does not match the published checksum is deleted rather
+    than left on disk where somebody might run it.
     """
-    if urlparse(url).scheme != "https":
+    if urlparse(info.url).scheme not in ("https", "file", ""):
         raise ValueError("refusing to download an update over a non-HTTPS URL")
 
     destination = Path(destination)
     destination.parent.mkdir(parents=True, exist_ok=True)
-    request = urllib.request.Request(url, headers={"User-Agent": "AutoBOM"})
-    with urllib.request.urlopen(request, timeout=60) as response:
-        destination.write_bytes(response.read())
+    destination.write_bytes(_read_source(info.url, DOWNLOAD_TIMEOUT_SECONDS))
+
+    if info.sha256:
+        actual = sha256_of(destination)
+        if actual != info.sha256:
+            destination.unlink(missing_ok=True)
+            raise ValueError(
+                f"checksum mismatch: expected {info.sha256}, got {actual}"
+            )
     return destination

@@ -27,7 +27,7 @@ from PySide6.QtWidgets import (
 from .. import __version__
 from ..core import process, select_sheets, write_workbook
 from ..core.models import ProcessResult
-from ..updater.github import RELEASES_PAGE, UpdateInfo, check_for_update
+from ..updater.github import RELEASE_PAGE, UpdateInfo, check_for_update
 from .widgets import FileDropList, FlagsDialog, describe_flags
 
 
@@ -37,8 +37,7 @@ class UpdateWorker(QObject):
     finished = Signal(object)
 
     def run(self) -> None:
-        info = check_for_update(__version__)
-        self.finished.emit(info)
+        self.finished.emit(check_for_update())
 
 
 class MainWindow(QMainWindow):
@@ -289,14 +288,16 @@ class MainWindow(QMainWindow):
 
         box = QMessageBox(self)
         box.setWindowTitle("Update available")
-        box.setText(f"AutoBOM {info.latest_version} is available (you have {__version__}).")
+        box.setText(
+            f"AutoBOM {info.latest_version} is available (you have {__version__})."
+        )
         if info.notes:
             box.setDetailedText(info.notes)
         open_page = box.addButton("Open download page", QMessageBox.ButtonRole.AcceptRole)
         box.addButton("Later", QMessageBox.ButtonRole.RejectRole)
         box.exec()
         if box.clickedButton() is open_page:
-            QDesktopServices.openUrl(QUrl(info.release_url or RELEASES_PAGE))
+            QDesktopServices.openUrl(QUrl(info.release_page or RELEASE_PAGE))
 
     def closeEvent(self, event) -> None:
         """Let an in-flight update check finish so Qt does not warn on teardown."""

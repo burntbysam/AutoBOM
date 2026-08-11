@@ -148,14 +148,44 @@ until it builds reputation. Code signing is a separate step.
 
 ### Releasing
 
-Bump `VERSION`, commit, then push a tag:
+There is nothing to tag. `.github/workflows/build-windows.yml` runs on every
+push to `main` or a `claude/**` branch: it runs the tests, builds the
+executable, makes the built `.exe` self-test itself, and republishes it to a
+fixed release tag. Bump `VERSION` when the version should change; the build
+identifier moves on its own.
+
+The download link is therefore permanent:
+
+> **https://github.com/burntbysam/AutoBOM/releases/download/windows-latest-build/AutoBOM.exe**
+
+The release also carries `latest.json`, the manifest installed copies poll:
+
+```json
+{"version": "1.0.0", "build_id": "42.a1b2c3d", "sha256": "…",
+ "size": 25356582, "url": "https://…/AutoBOM.exe", "notes": "…"}
+```
+
+`build_id` is `<run number>.<short sha>` and changes on every build, so a fix
+shipped without a version bump is still recognised as newer. A downloaded
+update is rejected and deleted unless it matches the published SHA256.
+
+Point the check somewhere else with `AUTOBOM_UPDATE_URL`. It accepts a UNC path,
+which is usually what a shop wants — no GitHub access needed on the floor:
 
 ```
-git tag v1.1.0 && git push origin v1.1.0
+set AUTOBOM_UPDATE_URL=\\server\shared\AutoBOM\latest.json
 ```
 
-`.github/workflows/release.yml` runs the tests, builds `AutoBOM.exe` on Windows,
-and attaches it to the GitHub release. The app checks that release feed on
-launch and offers the download when a newer tag appears; the check fails
-silently when the machine is offline, so AutoBOM still works on an isolated
-shop network.
+The check runs on a background thread and fails silently when the machine is
+offline, so AutoBOM still starts on an isolated network.
+
+### Verifying a copy
+
+```
+AutoBOM.exe --selftest
+```
+
+Processes a synthetic job covering every rule — both thickness windows, OTHER,
+both Trumpf outcomes, an individual part and an excluded description — writes a
+workbook, and checks every value. Exit code 0 means the copy is sound. It needs
+no customer files, so it works on any machine.

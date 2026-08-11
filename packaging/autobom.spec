@@ -11,12 +11,18 @@ block_cipher = None
 
 ROOT = Path(SPECPATH).resolve().parent
 
+# VERSION ships inside the bundle so the updater can compare against it.
+# build_info.json is written by CI just before the build; a local build simply
+# has no stamp and reports itself as a dev build.
+datas = [(str(ROOT / "VERSION"), ".")]
+if (ROOT / "build_info.json").is_file():
+    datas.append((str(ROOT / "build_info.json"), "."))
+
 a = Analysis(
     [str(ROOT / "packaging" / "launcher.py")],
     pathex=[str(ROOT)],
     binaries=[],
-    # VERSION ships inside the bundle so the updater can compare against it.
-    datas=[(str(ROOT / "VERSION"), ".")],
+    datas=datas,
     hiddenimports=["autobom.gui.app", "autobom.cli"],
     hookspath=[],
     hooksconfig={},
