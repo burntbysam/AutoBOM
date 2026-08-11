@@ -1,0 +1,13 @@
+# Customer data — sample BOMs, ILs and reference workbooks stay local.
+tests/data/
+
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+
+# PyInstaller work and output directories
+build/
+dist/
