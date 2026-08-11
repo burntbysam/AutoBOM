@@ -15,6 +15,11 @@ from .models import BomLine, IlLine, ParseIssue
 
 SHEET_AL_PREFIX = "SHEET,AL"
 
+# Descriptions that never reach the workbook, whichever file they arrive in.
+# Matched on the whole description, case-insensitively, after collapsing runs
+# of whitespace.
+EXCLUDED_DESCRIPTIONS = ("COVER JOINER CHANNEL",)
+
 # First decimal number in the description: .125, 0.190, 1.25 all match.
 _THICKNESS_RE = re.compile(r"\d*\.\d+")
 # Dimensions in WxH form; either side may carry decimals (60x133.13).
@@ -50,6 +55,12 @@ def _read_text(path: Path) -> str:
         except UnicodeDecodeError as exc:  # pragma: no cover - depends on file
             last_error = exc
     raise last_error  # pragma: no cover
+
+
+def is_excluded_description(description: str) -> bool:
+    """True for a description on the never-count list."""
+    normalised = " ".join(description.split()).upper()
+    return normalised in {value.upper() for value in EXCLUDED_DESCRIPTIONS}
 
 
 def assembly_key(value: str) -> str:
@@ -115,12 +126,17 @@ def _parse_quantity(value: str) -> Decimal | None:
         return None
 
 
-def parse_bom(path: Path, issues: list[ParseIssue] | None = None) -> list[BomLine]:
+def parse_bom(
+    path: Path,
+    issues: list[ParseIssue] | None = None,
+    excluded: list[ParseIssue] | None = None,
+) -> list[BomLine]:
     """Read one bus section BOM, keeping only sheet aluminium rows.
 
     Columns: ITEM NUMBER | ITEM QUANTITY | DESCRIPTION | INVENTORY CODE | SHOP TYPE
     """
     issues = issues if issues is not None else []
+    excluded = excluded if excluded is not None else []
     filename = path.name
     key = assembly_key(path.stem)
     lines: list[BomLine] = []
@@ -132,6 +148,11 @@ def parse_bom(path: Path, issues: list[ParseIssue] | None = None) -> list[BomLin
         item_number, quantity_text, description = fields[0], fields[1], fields[2]
         # Case-sensitive per SPEC rule 1.
         if not description.startswith(SHEET_AL_PREFIX):
+            continue
+        # Checked after the SHEET,AL filter so the report only mentions rows
+        # the exclusion actually removed.
+        if is_excluded_description(description):
+            excluded.append(ParseIssue(filename, number, description.strip()))
             continue
 
         quantity = _parse_quantity(quantity_text)
@@ -167,19 +188,27 @@ def parse_bom(path: Path, issues: list[ParseIssue] | None = None) -> list[BomLin
     return lines
 
 
-def parse_il(path: Path, issues: list[ParseIssue] | None = None) -> list[IlLine]:
+def parse_il(
+    path: Path,
+    issues: list[ParseIssue] | None = None,
+    excluded: list[ParseIssue] | None = None,
+) -> list[IlLine]:
     """Read one indented list.
 
     Columns: LINE NUMBER | ASSEMBLY QUANTITY | DESCRIPTION | ASSEMBLY NUMBER | SHOP CODE
     Only assembly quantity and assembly number are used, per SPEC rule 1.
     """
     issues = issues if issues is not None else []
+    excluded = excluded if excluded is not None else []
     filename = path.name
     lines: list[IlLine] = []
 
     for number, fields in read_rows(path):
         if len(fields) < 4:
             issues.append(ParseIssue(filename, number, "fewer than 4 columns"))
+            continue
+        if is_excluded_description(fields[2]):
+            excluded.append(ParseIssue(filename, number, fields[2].strip()))
             continue
         quantity = _parse_quantity(fields[1])
         assembly_number = fields[3].strip()

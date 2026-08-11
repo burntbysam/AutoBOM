@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from decimal import Decimal
 
 from .models import (
@@ -11,6 +12,30 @@ from .models import (
     THICKNESS_OTHER,
     THICKNESS_THREE_SIXTEENTH,
 )
+
+# Individual parts appear on the IL but have no BOM of their own, because they
+# are single pieces cut from a standard sheet rather than assemblies. Two
+# families are recognised:
+#   JB-2724-06    -- JB parts, matched on the prefix
+#   8701-300-I    -- the 300 series: three digits with no leading zero
+# A bus section is 8701-01101-I: five digits *with* a leading zero, so it never
+# matches these patterns and a genuinely missing bus section BOM is still
+# flagged rather than quietly turned into one standard sheet.
+INDIVIDUAL_PART_PATTERNS = (
+    re.compile(r"^JB-", re.IGNORECASE),
+    re.compile(r"^[A-Za-z0-9]+-[1-9]\d{2}-I$", re.IGNORECASE),
+)
+
+# Every individual part is cut from the same stock.
+STANDARD_THICKNESS = Decimal("0.125")
+STANDARD_WIDTH = Decimal("60")
+STANDARD_HEIGHT = Decimal("120")
+
+
+def is_individual_part(assembly_number: str) -> bool:
+    """True for a 300-series or JB part, which needs no BOM of its own."""
+    value = assembly_number.strip()
+    return any(pattern.match(value) for pattern in INDIVIDUAL_PART_PATTERNS)
 
 TOLERANCE = Decimal("0.005")
 NOMINAL_EIGHTH = Decimal("0.125")

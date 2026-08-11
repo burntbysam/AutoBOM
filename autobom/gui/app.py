@@ -170,6 +170,10 @@ class MainWindow(QMainWindow):
             self._append(
                 f"Skipped {issue.source_file} line {issue.line_number}: {issue.detail}"
             )
+        for row in result.excluded:
+            self._append(
+                f"Excluded {row.source_file} line {row.line_number}: {row.detail}"
+            )
 
         if result.cross_check.has_flags:
             self._append(describe_flags(result.cross_check))

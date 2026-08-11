@@ -50,6 +50,21 @@ trailing `-I`, drop one leading zero from the assembly, append the item).
 **Quantities** — Final Qty = BOM item quantity × IL assembly quantity, summed
 wherever the same part number turns up more than once.
 
+**Individual parts** — the 300 series (`8701-300-I`) and JB parts
+(`JB-2724-06`) are single pieces, not assemblies, so they have no BOM of their
+own. They are taken straight off the IL, counted at the IL's assembly quantity
+with nothing to multiply, and assigned standard stock: **1/8", 60x120, T**.
+Their part number is the assembly number verbatim.
+
+A bus section is `8701-01101-I` — five digits *with* a leading zero — so it
+never matches those patterns, and a bus section BOM you forgot to send is still
+caught as FLAG 2 rather than quietly becoming one standard sheet.
+
+**Never counted** — any row whose description is `COVER JOINER CHANNEL` is
+dropped, in a BOM or an IL, whatever it is attached to. The run reports each
+row it removed. The list lives in `EXCLUDED_DESCRIPTIONS` in
+`autobom/core/parser.py` if more need adding.
+
 **Thickness** (±0.005): `1/8"` covers 0.120–0.130, `3/16"` covers 0.1825–0.1925,
 everything else is `OTHER` and gets flagged for review.
 
@@ -74,13 +89,13 @@ An OTHER part goes on `Other` and `All` only. An F part goes on `F Parts` and
 
 - **FLAG 1** — a BOM you supplied that no IL line references. Its parts are not
   in the workbook, because there is no assembly quantity to multiply by.
-- **FLAG 2** — an assembly the IL calls for that you supplied no BOM for. Its
-  sheet metal is not counted.
+- **FLAG 2** — a *bus section* the IL calls for that you supplied no BOM for.
+  Its sheet metal is not counted. 300-series and JB parts never appear here;
+  they are individual parts and are counted automatically.
 
-AutoBOM never invents a part for an unmatched assembly. If the IL asks for
-`JB-2724-06` and no `JB-2724-06` BOM was supplied, that assembly is reported as
-FLAG 2 and contributes zero rows — its thickness and sheet size are simply not
-knowable from the files on hand.
+Outside those two families, AutoBOM never invents a part for an unmatched
+assembly — an unknown assembly's thickness and sheet size are not knowable from
+the files on hand, so it is flagged rather than guessed at.
 
 ## Development
 

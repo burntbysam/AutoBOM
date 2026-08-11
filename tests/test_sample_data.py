@@ -11,6 +11,7 @@ from decimal import Decimal
 import pytest
 
 from autobom.core import process, select_sheets
+from autobom.core.classify import is_individual_part
 
 REFERENCE = "REFERENCE_8701_prior_llm_run.xlsx"
 
@@ -33,21 +34,33 @@ class TestJob8701:
     def test_no_bom_is_missing_from_the_il(self, result):
         assert result.cross_check.boms_without_il == []
 
-    def test_il_calls_assemblies_with_no_bom(self, result):
-        # The IL references splice covers and joiner channels whose BOMs were
-        # never supplied; they are FLAG 2, not output rows.
-        assert "JB-2724-06" in result.cross_check.il_without_bom
-        assert "8701-300-I" in result.cross_check.il_without_bom
+    def test_no_flags_at_all(self, result):
+        # Every unmatched assembly on this job is a 300-series or JB part.
+        assert result.cross_check.has_flags is False
 
-    def test_unmatched_il_assemblies_are_never_output_rows(self, result):
+    def test_individual_parts_are_counted_as_standard_sheet(self, result):
+        parts = {part.part_number: part for part in result.parts}
+        assert parts["8701-300-I"].quantity == Decimal(6)
+        assert parts["JB-2724-06"].quantity == Decimal(2)
+        assert parts["JB-2706-15"].quantity == Decimal(15)
+        for number in ("8701-300-I", "JB-2724-06", "JB-2706-15"):
+            assert parts[number].thickness_label == '1/8"'
+            assert parts[number].size == "60x120"
+            assert parts[number].fits_trumpf == "T"
+
+    def test_cover_joiner_channels_are_excluded(self, result):
         numbers = {part.part_number for part in result.parts}
-        for assembly in result.cross_check.il_without_bom:
-            assert assembly not in numbers
+        # The only two COVER JOINER CHANNEL rows on this job.
+        assert "8701-302-I" not in numbers
+        assert "JB-2705-27" not in numbers
+        assert len(result.excluded) == 2
+        assert {row.detail for row in result.excluded} == {"COVER JOINER CHANNEL"}
 
     def test_expected_totals(self, result):
         sheets = select_sheets(result.parts)
-        assert len(sheets["All"]) == 26
-        assert len(sheets["1-8"]) == 23
+        # 26 bus section parts + 14 individual parts - 2 joiner channels.
+        assert len(sheets["All"]) == 38
+        assert len(sheets["1-8"]) == 35
         assert len(sheets["3-16"]) == 0
         assert len(sheets["F Parts"]) == 3
         assert len(sheets["Other"]) == 0
@@ -61,17 +74,21 @@ class TestJob8701:
         ]
         assert all(part.size == "72x120" for part in f_parts)
 
-    def test_all_quantities_are_one(self, result):
-        # Every IL line for these assemblies has assembly quantity 1.
-        assert all(part.quantity == Decimal(1) for part in result.parts)
+    def test_bus_section_quantities_are_one(self, result):
+        # Every IL line for the bus section assemblies has quantity 1; the
+        # individual parts carry their own quantities and are excluded here.
+        bus_sections = [
+            part for part in result.parts if not is_individual_part(part.part_number)
+        ]
+        assert len(bus_sections) == 26
+        assert all(part.quantity == Decimal(1) for part in bus_sections)
 
 
 class TestAgainstPriorRun:
     """The reference workbook came from an LLM run and is a sanity check only.
 
-    Every part this pipeline emits must match it exactly. The reference
-    additionally contains fabricated rows for assemblies that had no BOM;
-    those are asserted to be absent here on purpose.
+    Everything this pipeline emits must appear in it. The reference differs
+    only by the COVER JOINER CHANNEL rows, which are excluded here on purpose.
     """
 
     @pytest.fixture
@@ -105,7 +122,9 @@ class TestAgainstPriorRun:
             }
             assert mine <= set(reference_rows[name]), f"{name} has rows the prior run lacked"
 
-    def test_reference_extras_are_exactly_the_flag_2_assemblies(self, result, reference_rows):
+    def test_the_only_difference_is_the_excluded_joiner_channels(
+        self, result, reference_rows
+    ):
         mine = {
             (
                 str(int(part.quantity)),
@@ -117,4 +136,4 @@ class TestAgainstPriorRun:
             for part in select_sheets(result.parts)["All"]
         }
         extras = {row[1] for row in reference_rows["All"] if row not in mine}
-        assert extras == set(result.cross_check.il_without_bom)
+        assert extras == {"8701-302-I", "JB-2705-27"}

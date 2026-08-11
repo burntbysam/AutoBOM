@@ -111,27 +111,31 @@ class TestCrossCheck:
         assert cross.boms_without_il == ["8701-01102-I.csv"]
         assert cross.il_without_bom == []
 
-    def test_flag_2_il_without_bom(self, tmp_path):
+    def test_flag_2_is_a_missing_bus_section_bom(self, tmp_path):
+        """A bus section on the IL with no BOM file is a real mismatch."""
         write_csv(tmp_path, "8701-01101-I.csv", [f"1|1|{EIGHTH_FITS}|X|A|"])
         write_csv(
             tmp_path,
             "IL-8701-011.csv",
-            ["1|1|BUS|8701-01101-I|", "2|2|SPLICE COVER|JB-2724-06|"],
+            ["1|1|BUS|8701-01101-I|", "2|1|BUS|8701-01102-I|"],
         )
         cross = run(tmp_path).cross_check
         assert cross.boms_without_il == []
-        assert cross.il_without_bom == ["JB-2724-06"]
+        assert cross.il_without_bom == ["8701-01102-I"]
 
-    def test_il_only_assembly_produces_no_part_row(self, tmp_path):
-        """An IL assembly with no BOM must never become an invented part row."""
+    def test_individual_parts_are_not_flagged(self, tmp_path):
+        """300-series and JB parts have no BOM by design, so they are not FLAG 2."""
         write_csv(tmp_path, "8701-01101-I.csv", [f"1|1|{EIGHTH_FITS}|X|A|"])
         write_csv(
             tmp_path,
             "IL-8701-011.csv",
-            ["1|1|BUS|8701-01101-I|", "2|2|SPLICE COVER|JB-2724-06|"],
+            [
+                "1|1|BUS|8701-01101-I|",
+                "2|2|SPLICE COVER|JB-2724-06|",
+                "3|6|SPLICE COVER|8701-300-I|",
+            ],
         )
-        result = run(tmp_path)
-        assert [part.part_number for part in result.parts] == ["8701-1101-1"]
+        assert run(tmp_path).cross_check.has_flags is False
 
     def test_bom_with_no_sheet_al_still_flagged(self, tmp_path):
         """A BOM absent from the IL is FLAG 1 even if it had nothing to keep."""
@@ -145,6 +149,127 @@ class TestCrossCheck:
         write_csv(
             tmp_path,
             "IL-8701-011.csv",
-            ["1|1|BUS|8701-01101-I|", "2|1|X|JB-1|", "3|1|X|JB-1|"],
+            [
+                "1|1|BUS|8701-01101-I|",
+                "2|1|BUS|8701-09999-I|",
+                "3|1|BUS|8701-09999-I|",
+            ],
         )
-        assert run(tmp_path).cross_check.il_without_bom == ["JB-1"]
+        assert run(tmp_path).cross_check.il_without_bom == ["8701-09999-I"]
+
+
+class TestIndividualParts:
+    """300-series and JB parts come straight off the IL as standard stock."""
+
+    def test_quantity_comes_from_the_il_unmultiplied(self, tmp_path):
+        write_csv(tmp_path, "8701-01101-I.csv", [f"1|1|{EIGHTH_FITS}|X|A|"])
+        write_csv(
+            tmp_path,
+            "IL-8701-011.csv",
+            [
+                "1|1|BUS|8701-01101-I|",
+                "2|2|ENCLOSURE TOP SPLICE COVER|JB-2724-06|",
+                "3|6|ENCLOSURE TOP SPLICE COVER|8701-300-I|",
+            ],
+        )
+        quantities = {part.part_number: part.quantity for part in run(tmp_path).parts}
+        assert quantities["JB-2724-06"] == Decimal(2)
+        assert quantities["8701-300-I"] == Decimal(6)
+
+    def test_assigned_standard_sheet(self, tmp_path):
+        write_csv(tmp_path, "8701-01101-I.csv", [f"1|1|{EIGHTH_FITS}|X|A|"])
+        write_csv(
+            tmp_path,
+            "IL-8701-011.csv",
+            ["1|1|BUS|8701-01101-I|", "2|2|SPLICE COVER|JB-2724-06|"],
+        )
+        part = {p.part_number: p for p in run(tmp_path).parts}["JB-2724-06"]
+        assert (part.thickness_label, part.size, part.fits_trumpf) == ('1/8"', "60x120", "T")
+
+    def test_part_number_is_the_assembly_number_verbatim(self, tmp_path):
+        write_csv(tmp_path, "8701-01101-I.csv", [f"1|1|{EIGHTH_FITS}|X|A|"])
+        write_csv(
+            tmp_path,
+            "IL-8701-011.csv",
+            ["1|1|BUS|8701-01101-I|", "2|1|X|8701-300-I|"],
+        )
+        assert "8701-300-I" in {part.part_number for part in run(tmp_path).parts}
+
+    def test_repeated_individual_part_sums(self, tmp_path):
+        write_csv(tmp_path, "8701-01101-I.csv", [f"1|1|{EIGHTH_FITS}|X|A|"])
+        write_csv(
+            tmp_path,
+            "IL-8701-011.csv",
+            ["1|1|BUS|8701-01101-I|", "2|2|X|JB-2724-06|", "3|3|X|JB-2724-06|"],
+        )
+        quantities = {part.part_number: part.quantity for part in run(tmp_path).parts}
+        assert quantities["JB-2724-06"] == Decimal(5)
+
+    def test_bus_section_shape_is_never_an_individual_part(self, tmp_path):
+        """Five digits with a leading zero stays a bus section, so it flags."""
+        write_csv(tmp_path, "8701-01101-I.csv", [f"1|1|{EIGHTH_FITS}|X|A|"])
+        write_csv(
+            tmp_path,
+            "IL-8701-011.csv",
+            ["1|1|BUS|8701-01101-I|", "2|1|BUS|8701-02101-I|"],
+        )
+        result = run(tmp_path)
+        assert result.cross_check.il_without_bom == ["8701-02101-I"]
+        assert "8701-02101-I" not in {part.part_number for part in result.parts}
+
+
+class TestExcludedDescriptions:
+    def test_cover_joiner_channel_is_dropped(self, tmp_path):
+        write_csv(tmp_path, "8701-01101-I.csv", [f"1|1|{EIGHTH_FITS}|X|A|"])
+        write_csv(
+            tmp_path,
+            "IL-8701-011.csv",
+            [
+                "1|1|BUS|8701-01101-I|",
+                "2|4|COVER JOINER CHANNEL|JB-2705-27|",
+                "3|15|COVER JOINER CHANNEL|8701-302-I|",
+            ],
+        )
+        result = run(tmp_path)
+        numbers = {part.part_number for part in result.parts}
+        assert "JB-2705-27" not in numbers
+        assert "8701-302-I" not in numbers
+
+    def test_exclusions_are_reported_not_silent(self, tmp_path):
+        write_csv(tmp_path, "8701-01101-I.csv", [f"1|1|{EIGHTH_FITS}|X|A|"])
+        write_csv(
+            tmp_path,
+            "IL-8701-011.csv",
+            ["1|1|BUS|8701-01101-I|", "2|4|COVER JOINER CHANNEL|JB-2705-27|"],
+        )
+        excluded = run(tmp_path).excluded
+        assert len(excluded) == 1
+        assert excluded[0].detail == "COVER JOINER CHANNEL"
+        assert excluded[0].line_number == 3
+
+    def test_excluded_row_does_not_become_a_flag(self, tmp_path):
+        write_csv(tmp_path, "8701-01101-I.csv", [f"1|1|{EIGHTH_FITS}|X|A|"])
+        write_csv(
+            tmp_path,
+            "IL-8701-011.csv",
+            ["1|1|BUS|8701-01101-I|", "2|4|COVER JOINER CHANNEL|JB-2705-27|"],
+        )
+        assert run(tmp_path).cross_check.has_flags is False
+
+    def test_matching_ignores_case_and_extra_spacing(self, tmp_path):
+        write_csv(tmp_path, "8701-01101-I.csv", [f"1|1|{EIGHTH_FITS}|X|A|"])
+        write_csv(
+            tmp_path,
+            "IL-8701-011.csv",
+            ["1|1|BUS|8701-01101-I|", "2|4|Cover  Joiner   Channel|JB-2705-27|"],
+        )
+        assert "JB-2705-27" not in {part.part_number for part in run(tmp_path).parts}
+
+    def test_a_different_description_is_kept(self, tmp_path):
+        write_csv(tmp_path, "8701-01101-I.csv", [f"1|1|{EIGHTH_FITS}|X|A|"])
+        write_csv(
+            tmp_path,
+            "IL-8701-011.csv",
+            ["1|1|BUS|8701-01101-I|", "2|4|COVER JOINER BRACKET|JB-2705-28|"],
+        )
+        assert "JB-2705-28" in {part.part_number for part in run(tmp_path).parts}

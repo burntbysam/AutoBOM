@@ -9,6 +9,7 @@ from autobom.core.classify import (
     fits_trumpf,
     format_number,
     format_size,
+    is_individual_part,
     quantity_value,
 )
 from autobom.core.models import (
@@ -72,6 +73,45 @@ class TestFitsTrumpf:
         # fits_trumpf takes no thickness argument at all — the SPEC requires
         # the two classifications stay separate.
         assert fits_trumpf(Decimal(60), Decimal(120)) == FITS
+
+
+class TestIsIndividualPart:
+    @pytest.mark.parametrize(
+        "value",
+        [
+            "JB-2724-06",
+            "JB-2502-02",
+            "JB-2706-16",
+            "jb-2724-06",
+            "8701-300-I",
+            "8701-306-I",
+            "8701-999-I",
+            "8701-300-i",
+        ],
+    )
+    def test_recognised(self, value):
+        assert is_individual_part(value) is True
+
+    @pytest.mark.parametrize(
+        "value",
+        [
+            # Bus sections: five digits with a leading zero.
+            "8701-01101-I",
+            "8701-02109-I",
+            # A leading zero means it is not a 300-series number.
+            "8701-030-I",
+            # Missing the -I suffix.
+            "8701-300",
+            # Four digits is not the 300 series.
+            "8701-3001-I",
+            "",
+        ],
+    )
+    def test_not_recognised(self, value):
+        assert is_individual_part(value) is False
+
+    def test_surrounding_whitespace_is_ignored(self):
+        assert is_individual_part("  8701-300-I  ") is True
 
 
 class TestFormatting:

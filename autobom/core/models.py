@@ -100,5 +100,8 @@ class ProcessResult:
     cross_check: CrossCheck = field(default_factory=CrossCheck)
     other_parts: list[Part] = field(default_factory=list)
     issues: list[ParseIssue] = field(default_factory=list)
+    # Rows dropped by the never-count description list, kept so the run can
+    # report what it removed rather than silently shrinking the output.
+    excluded: list[ParseIssue] = field(default_factory=list)
     bom_files: list[str] = field(default_factory=list)
     il_files: list[str] = field(default_factory=list)

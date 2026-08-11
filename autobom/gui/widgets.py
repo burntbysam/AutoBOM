@@ -163,8 +163,10 @@ def describe_flags(cross_check: CrossCheck) -> str:
         blocks.append(
             "FLAG 2 — IL assemblies with no matching bus section BOM\n"
             "The IL calls for these assemblies, but no BOM file was supplied for "
-            "them, so their sheet metal is NOT counted in the workbook. If they "
-            "contain sheet aluminium, add the missing BOM CSVs.\n"
+            "them, so their sheet metal is NOT counted in the workbook. These are "
+            "assemblies that need their own BOM — 300-series and JB parts are "
+            "individual parts and are counted automatically, so they never appear "
+            "here. Add the missing BOM CSVs.\n"
             + "\n".join(f"    • {name}" for name in cross_check.il_without_bom)
         )
 
