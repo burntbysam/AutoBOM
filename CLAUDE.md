@@ -64,6 +64,13 @@ were hard to learn and are easy to get wrong:
   swap is rename-aside-then-replace, undone on failure. See
   `autobom/updater/installer.py` and the tests around it — that code can leave
   a machine with no working application if it is got wrong.
+- **A frozen app must scrub PyInstaller's env vars before spawning another
+  one.** `_PYI_APPLICATION_HOME_DIR` and friends tell a onefile bootloader
+  "you are a second stage, use this directory". A child inheriting them runs
+  the *parent's* unpacked code and dies on a missing `base_library.zip` when
+  the parent exits and deletes it. It also made the update self-test execute
+  the running build instead of the downloaded one. Use
+  `installer.child_environment()` for every subprocess.
 - **Do not re-export a name from `autobom/__init__.py` that matches a
   submodule.** `from .version import version` made `from autobom import
   version` hand back the function, so `version.build_info` raised. Cost two

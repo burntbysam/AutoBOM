@@ -239,6 +239,11 @@ it be renamed, so the live build is renamed aside, the new one takes its place,
 and the old copy is deleted on next launch. If the swap fails the rename is
 undone, so a failed update leaves a working application rather than none.
 
+Any process AutoBOM starts — the self-test, and the restart afterwards — gets
+an environment with PyInstaller's bootloader variables removed. Inheriting them
+makes the child run the *parent's* unpacked bundle, which then vanishes when the
+parent exits.
+
 **Update now** is hidden when there is nothing to replace — running from source,
 or an executable in a location you cannot write to, such as Program Files
 without elevation. The download page is still offered in those cases.

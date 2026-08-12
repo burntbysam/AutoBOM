@@ -457,13 +457,25 @@ class MainWindow(QMainWindow):
             )
             if answer == QMessageBox.StandardButton.Yes:
                 try:
-                    installer.relaunch(Path(path))
+                    process = installer.relaunch(Path(path))
                 except OSError as exc:
                     QMessageBox.warning(
                         self,
                         "Could not restart",
-                        f"The update is installed — please start AutoBOM again "
+                        "The update is installed — please start AutoBOM again "
                         f"yourself.\n\n{exc}",
+                    )
+                    return
+                if not installer.survived(process):
+                    # Already installed, so this is not a failed update; the
+                    # user just has to start it themselves.
+                    QMessageBox.warning(
+                        self,
+                        "Could not restart",
+                        "The update is installed, but the new version did not "
+                        "stay running when it was started automatically.\n\n"
+                        "Close AutoBOM and start it again from "
+                        f"{Path(path).name}.",
                     )
                     return
                 self.close()

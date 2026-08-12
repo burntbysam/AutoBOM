@@ -67,6 +67,44 @@ def backup_path(target: Path) -> Path:
     return Path(target).with_name(Path(target).name + BACKUP_SUFFIX)
 
 
+# How a onefile bootloader tells a second stage "do not extract, use this
+# directory". Inherited by any child we spawn, which makes the child run the
+# PARENT's unpacked code and then lose it when the parent exits and deletes
+# that directory. Confirmed present in the bootloader with `strings`.
+_BOOTLOADER_VARS = (
+    "_MEIPASS2",
+    "_PYI_APPLICATION_HOME_DIR",
+    "_PYI_ARCHIVE_FILE",
+    "_PYI_PARENT_PROCESS_LEVEL",
+    "_PYI_SPLASH_IPC",
+)
+
+
+def child_environment() -> dict[str, str]:
+    """A copy of the environment safe to hand another frozen executable.
+
+    Without this, launching AutoBOM.exe from AutoBOM.exe hands the child our
+    own unpacked-bundle directory. The child skips extraction and runs our
+    code; we then exit and delete that directory out from under it, and it dies
+    mid-import on a missing base_library.zip. It also means a self-test of a
+    downloaded build would silently execute the *running* build instead --
+    passing while proving nothing.
+    """
+    env = dict(os.environ)
+    for name in _BOOTLOADER_VARS:
+        env.pop(name, None)
+
+    # PyInstaller stashes the pre-launch loader paths; a child must get the
+    # originals rather than our bundled libraries.
+    for name in ("LD_LIBRARY_PATH", "DYLD_LIBRARY_PATH"):
+        original = env.pop(name + "_ORIG", None)
+        if original is not None:
+            env[name] = original
+        elif is_frozen():
+            env.pop(name, None)
+    return env
+
+
 def make_executable(candidate: Path) -> None:
     """Restore the executable bit, which a download does not carry on POSIX.
 
@@ -94,6 +132,9 @@ def run_selftest(candidate: Path, timeout: int = SELFTEST_TIMEOUT) -> tuple[bool
             [str(candidate), "--selftest"],
             capture_output=True,
             timeout=timeout,
+            # Without a scrubbed environment this would run OUR code, not the
+            # downloaded build's, and pass without testing anything.
+            env=child_environment(),
             **kwargs,
         )
     except (OSError, subprocess.SubprocessError) as exc:
@@ -147,11 +188,34 @@ def cleanup_backups(target: Path | None = None) -> None:
             pass
 
 
-def relaunch(target: Path) -> None:
+def relaunch(target: Path) -> subprocess.Popen:
     """Start the new build detached, so it survives this process exiting."""
     kwargs = {}
     if os.name == "nt":
         kwargs["creationflags"] = _DETACHED_PROCESS | _CREATE_NEW_PROCESS_GROUP
     else:
         kwargs["start_new_session"] = True
-    subprocess.Popen([str(target)], close_fds=True, **kwargs)
+    return subprocess.Popen(
+        [str(target)],
+        close_fds=True,
+        cwd=str(Path(target).parent),
+        env=child_environment(),
+        **kwargs,
+    )
+
+
+def survived(process: subprocess.Popen, seconds: float = 3.0) -> bool:
+    """True when the relaunched build is still alive a moment later.
+
+    Popen succeeding only means the process started. It can still die during
+    start-up, and the update has already been applied by then, so it matters
+    that we can tell the difference and say "installed, please start it again"
+    rather than leaving the user with only a crash dialog.
+    """
+    try:
+        process.wait(timeout=seconds)
+    except subprocess.TimeoutExpired:
+        return True
+    except Exception:  # noqa: BLE001 - never let a check break the update
+        return True
+    return False

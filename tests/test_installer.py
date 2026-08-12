@@ -211,3 +211,114 @@ class TestMakeExecutable:
 
     def test_missing_file_is_not_an_error(self, tmp_path):
         installer.make_executable(tmp_path / "absent")  # must not raise
+
+
+class TestChildEnvironment:
+    """A frozen app must not hand its own unpacked-bundle directory to a child.
+
+    The child would skip extraction, run the parent's code, and then lose that
+    directory when the parent exits — dying mid-import on a missing
+    base_library.zip. It also silently defeats the self-test gate, which would
+    execute the running build instead of the downloaded one.
+    """
+
+    @pytest.mark.parametrize("name", installer._BOOTLOADER_VARS)
+    def test_each_bootloader_variable_is_stripped(self, name, monkeypatch):
+        monkeypatch.setenv(name, r"C:\Users\x\AppData\Local\Temp\_MEI596042")
+        assert name not in installer.child_environment()
+
+    def test_ordinary_variables_survive(self, monkeypatch):
+        monkeypatch.setenv("AUTOBOM_UPDATE_URL", r"\\server\share\latest.json")
+        monkeypatch.setenv("PATH", "/usr/bin")
+        env = installer.child_environment()
+        assert env["AUTOBOM_UPDATE_URL"] == r"\\server\share\latest.json"
+        assert env["PATH"] == "/usr/bin"
+
+    def test_does_not_mutate_the_real_environment(self, monkeypatch):
+        monkeypatch.setenv("_PYI_APPLICATION_HOME_DIR", "/tmp/_MEI1")
+        installer.child_environment()
+        assert os.environ["_PYI_APPLICATION_HOME_DIR"] == "/tmp/_MEI1"
+
+    def test_restores_the_original_loader_path(self, monkeypatch):
+        monkeypatch.setenv("LD_LIBRARY_PATH", "/tmp/_MEI1")
+        monkeypatch.setenv("LD_LIBRARY_PATH_ORIG", "/usr/lib")
+        env = installer.child_environment()
+        assert env["LD_LIBRARY_PATH"] == "/usr/lib"
+        assert "LD_LIBRARY_PATH_ORIG" not in env
+
+    def test_leaves_loader_path_alone_when_not_frozen(self, monkeypatch):
+        monkeypatch.setenv("LD_LIBRARY_PATH", "/usr/lib")
+        monkeypatch.delenv("LD_LIBRARY_PATH_ORIG", raising=False)
+        assert installer.child_environment()["LD_LIBRARY_PATH"] == "/usr/lib"
+
+    def test_drops_the_bundle_loader_path_when_frozen(self, monkeypatch):
+        monkeypatch.setattr(installer, "is_frozen", lambda: True)
+        monkeypatch.setenv("LD_LIBRARY_PATH", "/tmp/_MEI1")
+        monkeypatch.delenv("LD_LIBRARY_PATH_ORIG", raising=False)
+        assert "LD_LIBRARY_PATH" not in installer.child_environment()
+
+
+@pytest.mark.skipif(os.name == "nt", reason="shebang scripts need a POSIX shell")
+class TestSpawnsUseTheCleanEnvironment:
+    def env_probe(self, path: Path) -> Path:
+        """A stand-in that reports whether it inherited the bootloader vars."""
+        path.write_text(
+            "#!/usr/bin/env python3\n"
+            "import os, sys\n"
+            "leaked = [n for n in os.environ if n.startswith('_PYI_') or n == '_MEIPASS2']\n"
+            "print('LEAKED:' + ','.join(sorted(leaked)))\n"
+            "sys.exit(0)\n",
+            encoding="utf-8",
+        )
+        path.chmod(path.stat().st_mode | stat.S_IEXEC)
+        return path
+
+    def test_selftest_child_sees_no_bootloader_variables(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("_PYI_APPLICATION_HOME_DIR", "/tmp/_MEI596042")
+        monkeypatch.setenv("_PYI_PARENT_PROCESS_LEVEL", "0")
+
+        ok, detail = installer.run_selftest(self.env_probe(tmp_path / "probe"), timeout=60)
+        assert ok is True
+        assert "LEAKED:" in detail
+        assert detail.strip().endswith("LEAKED:"), f"child inherited: {detail}"
+
+    def test_relaunch_child_sees_no_bootloader_variables(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("_PYI_APPLICATION_HOME_DIR", "/tmp/_MEI596042")
+        recorded = {}
+
+        def capture(args, **kwargs):
+            recorded.update(kwargs)
+
+            class Dummy:
+                pass
+
+            return Dummy()
+
+        monkeypatch.setattr(installer.subprocess, "Popen", capture)
+        installer.relaunch(tmp_path / "AutoBOM.exe")
+        assert "_PYI_APPLICATION_HOME_DIR" not in recorded["env"]
+
+
+@pytest.mark.skipif(os.name == "nt", reason="shebang scripts need a POSIX shell")
+class TestSurvived:
+    def test_a_process_that_keeps_running_counts_as_started(self, tmp_path):
+        script = tmp_path / "alive"
+        script.write_text(
+            "#!/usr/bin/env python3\nimport time\ntime.sleep(10)\n", encoding="utf-8"
+        )
+        script.chmod(script.stat().st_mode | stat.S_IEXEC)
+        process = installer.relaunch(script)
+        try:
+            assert installer.survived(process, seconds=1.0) is True
+        finally:
+            process.kill()
+
+    def test_a_process_that_dies_immediately_is_detected(self, tmp_path):
+        # Exactly the reported failure: the relaunched build crashes on start.
+        script = tmp_path / "crashes"
+        script.write_text(
+            "#!/usr/bin/env python3\nimport sys\nsys.exit(1)\n", encoding="utf-8"
+        )
+        script.chmod(script.stat().st_mode | stat.S_IEXEC)
+        process = installer.relaunch(script)
+        assert installer.survived(process, seconds=5.0) is False
