@@ -43,6 +43,10 @@ were hard to learn and are easy to get wrong:
 - **Summary totals group by thickness, not by sheet**, so an F part counts
   toward its own thickness and the category rows add up to the grand total.
   This is why the All sheet's `1/8"` row can exceed the `1-8` sheet's total.
+- **The Trumpf takes 61.5 x 120 at most**, inclusive, orientation-free.
+  Anything larger is an F part. Earlier builds used 60 x 133.5, which was
+  wrong in both directions — a long narrow sheet such as 60x133.13 was being
+  sent to a machine that cannot take it. `autobom/core/classify.py`.
 - The workbook is `<job> BOM Quantities.xlsx` — spaces, no underscores, no
   `OUTPUT` prefix. The rule lives in `autobom/core/naming.py`.
 

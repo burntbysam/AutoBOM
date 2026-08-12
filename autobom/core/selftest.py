@@ -23,6 +23,8 @@ _BOM_ROWS = [
     "3|1|SHEET,AL,SMOOTH,5052,.1875,60x120|CAL3|COVER|",   # 3/16" and fits
     "4|1|SHEET,AL,SMOOTH,5052,.250,60x120|CAL4|COVER|",    # OTHER thickness
     "5|9|BAR,RE,CU,3/8X10|CAL5|CONDUCTOR|",                # not sheet aluminium
+    "6|1|SHEET,AL,SMOOTH,3003,.125,61.5x120|CAL6|COVER|",  # the exact machine maximum
+    "7|1|SHEET,AL,SMOOTH,3003,.125,60x133.13|CAL7|COVER|", # over the 120 length limit
 ]
 _IL_ROWS = [
     "1|2|BUS SECTION|8701-01101-I|",
@@ -37,19 +39,23 @@ _EXPECTED_ROWS = {
     "8701-1101-2": (Decimal(4), '1/8"', "72x120", "F"),
     "8701-1101-3": (Decimal(2), '3/16"', "60x120", "T"),
     "8701-1101-4": (Decimal(2), "OTHER", "60x120", "T"),
+    # 61.5x120 is exactly what the Trumpf takes; 60x133.13 is too long for it
+    # even though it is narrow, and was a T part under the old 133.5 limit.
+    "8701-1101-6": (Decimal(2), '1/8"', "61.5x120", "T"),
+    "8701-1101-7": (Decimal(2), '1/8"', "60x133.13", "F"),
     "JB-2724-06": (Decimal(3), '1/8"', "60x120", "T"),
     "8701-300-I": (Decimal(6), '1/8"', "60x120", "T"),
 }
-_EXPECTED_SHEET_COUNTS = {"1-8": 3, "3-16": 1, "F Parts": 1, "Other": 1, "All": 6}
+_EXPECTED_SHEET_COUNTS = {"1-8": 4, "3-16": 1, "F Parts": 2, "Other": 1, "All": 8}
 
 # label -> (line items, pieces). Grouped by thickness, so the 1/8" row includes
 # the F part that does not fit the Trumpf.
 _EXPECTED_SUMMARY = {
-    '1/8"': (4, 15),
+    '1/8"': (6, 19),
     '3/16"': (1, 2),
-    '1/8" + 3/16" total': (5, 17),
+    '1/8" + 3/16" total': (7, 21),
     "OTHER thickness": (1, 2),
-    "Grand total": (6, 19),
+    "Grand total": (8, 23),
 }
 
 

@@ -41,10 +41,12 @@ TOLERANCE = Decimal("0.005")
 NOMINAL_EIGHTH = Decimal("0.125")
 NOMINAL_THREE_SIXTEENTH = Decimal("0.1875")
 
-# Trumpf bed limits; orientation does not matter, so the sheet's smaller and
-# larger dimensions are compared rather than width and height.
-TRUMPF_SHORT_LIMIT = Decimal("60")
-TRUMPF_LONG_LIMIT = Decimal("133.5")
+# The largest sheet the Trumpf actually takes is 61.5 x 120. Orientation does
+# not matter, so the sheet's smaller and larger dimensions are compared rather
+# than its width and height. Both limits are inclusive: 61.5x120 fits, anything
+# over it is an F part.
+TRUMPF_SHORT_LIMIT = Decimal("61.5")
+TRUMPF_LONG_LIMIT = Decimal("120")
 
 
 def classify_thickness(thickness: Decimal) -> str:

@@ -51,23 +51,36 @@ class TestFitsTrumpf:
     @pytest.mark.parametrize(
         "width,height,expected",
         [
+            # The machine's real maximum is 61.5 x 120, inclusive.
             ("60", "120", FITS),
-            ("60", "133.5", FITS),
-            ("60", "133.13", FITS),
+            ("61.5", "120", FITS),
+            ("61.5", "61.5", FITS),
+            ("48", "96", FITS),
             # Orientation must not matter.
             ("120", "60", FITS),
-            ("133.5", "60", FITS),
-            # Smaller dimension over 60.
+            ("120", "61.5", FITS),
+            # Smaller dimension over 61.5.
+            ("61.51", "120", DOES_NOT_FIT),
             ("72", "120", DOES_NOT_FIT),
             ("120", "72", DOES_NOT_FIT),
-            # Larger dimension over 133.5.
+            # Larger dimension over 120.
+            ("60", "120.1", DOES_NOT_FIT),
             ("60", "144", DOES_NOT_FIT),
-            ("60", "133.51", DOES_NOT_FIT),
             ("72", "144", DOES_NOT_FIT),
+            # Was T under the old 133.5 limit; the machine cannot take it.
+            ("60", "133.13", DOES_NOT_FIT),
+            ("60", "133.5", DOES_NOT_FIT),
         ],
     )
     def test_limits(self, width, height, expected):
         assert fits_trumpf(Decimal(width), Decimal(height)) == expected
+
+    def test_the_exact_maximum_sheet_fits(self):
+        assert fits_trumpf(Decimal("61.5"), Decimal("120")) == FITS
+
+    def test_a_hair_over_either_limit_does_not(self):
+        assert fits_trumpf(Decimal("61.6"), Decimal("120")) == DOES_NOT_FIT
+        assert fits_trumpf(Decimal("61.5"), Decimal("120.01")) == DOES_NOT_FIT
 
     def test_independent_of_thickness(self):
         # fits_trumpf takes no thickness argument at all — the SPEC requires

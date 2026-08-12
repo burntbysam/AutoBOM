@@ -68,8 +68,10 @@ row it removed. The list lives in `EXCLUDED_DESCRIPTIONS` in
 **Thickness** (±0.005): `1/8"` covers 0.120–0.130, `3/16"` covers 0.1825–0.1925,
 everything else is `OTHER` and gets flagged for review.
 
-**Fits Trumpf** — `T` when the smaller dimension is ≤ 60 and the larger is
-≤ 133.5, in either orientation; otherwise `F`. This is independent of thickness.
+**Fits Trumpf** — the largest sheet the machine takes is **61.5 x 120**. `T`
+when the smaller dimension is ≤ 61.5 and the larger is ≤ 120, in either
+orientation; anything over that is `F`. Both limits are inclusive, so 61.5x120
+itself fits. This is independent of thickness.
 
 **Output** — five sheets, always, with columns `Qty | Part # | Thickness | Size
 | Fits Trumpf` and every sheet sorted by Part #:
