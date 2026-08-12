@@ -9,6 +9,7 @@ would never reach the shop floor.
 from __future__ import annotations
 
 import json
+import platform
 import sys
 from functools import lru_cache
 from pathlib import Path
@@ -62,3 +63,37 @@ def describe() -> str:
     if info["build_id"] == _DEV_BUILD_ID:
         return f"AutoBOM {version()}"
     return f"AutoBOM {version()} (build {info['build_id']})"
+
+
+def is_ci_build() -> bool:
+    """False for a build made locally, which carries no CI stamp."""
+    return build_id() != _DEV_BUILD_ID
+
+
+def build_details() -> list[tuple[str, str]]:
+    """Label/value pairs identifying exactly what is running.
+
+    Kept here rather than in the window so the same answer is available
+    without a GUI, and so "which build is the shop actually on?" has one
+    source. Qt and the update source are appended by the caller that knows
+    about them.
+    """
+    info = build_info()
+    details: list[tuple[str, str]] = [("Version", version())]
+
+    if is_ci_build():
+        details.append(("Build", build_id()))
+    else:
+        details.append(("Build", "local build (not from CI)"))
+
+    commit = str(info.get("commit") or "")
+    if commit:
+        details.append(("Commit", commit[:12]))
+
+    if getattr(sys, "frozen", False):
+        details.append(("Installed", str(Path(sys.executable))))
+    else:
+        details.append(("Installed", "running from source"))
+
+    details.append(("Python", platform.python_version()))
+    return details

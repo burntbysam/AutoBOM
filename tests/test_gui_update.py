@@ -247,3 +247,22 @@ class TestInstallThread:
         assert done and done[0][0] == "fail"
         assert done[0][1] == ""  # empty message means cancelled, not an error
         assert target.read_bytes() == b"OLD BUILD"
+
+
+class TestAboutDetails:
+    def test_includes_build_and_environment(self, qapp, window):
+        rows = dict(window.about_rows())
+        for expected in ("Version", "Build", "Installed", "Python", "Qt", "Updates"):
+            assert expected in rows, f"About is missing {expected}"
+
+    def test_reports_the_update_source(self, qapp, window):
+        # A shop pointed at a UNC share needs to see that, not the default.
+        assert "latest.json" in dict(window.about_rows())["Updates"]
+
+    def test_qt_row_names_both_bindings_and_toolkit(self, qapp, window):
+        qt = dict(window.about_rows())["Qt"]
+        assert "PySide6" in qt and "Qt" in qt
+
+    def test_rows_are_copyable_as_plain_text(self, qapp, window):
+        text = "\n".join(f"{k}: {v}" for k, v in window.about_rows())
+        assert "Version:" in text and "Build:" in text

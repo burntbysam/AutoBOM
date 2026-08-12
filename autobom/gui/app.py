@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import sys
+from html import escape
 from pathlib import Path
 
-from PySide6.QtCore import Qt, QThread, Signal
+import PySide6
+from PySide6.QtCore import Qt, QThread, Signal, qVersion
 from PySide6.QtGui import QAction, QDesktopServices, QGuiApplication
 from PySide6.QtCore import QUrl
 from PySide6.QtWidgets import (
@@ -26,12 +28,14 @@ from PySide6.QtWidgets import (
 )
 
 from .. import __version__
+from ..version import build_details
 from ..core import build_summary, process, select_sheets, write_workbook
 from ..core.models import ProcessResult
 from ..core.naming import default_workbook_name
 from ..updater import installer
 from ..updater.github import (
     RELEASE_PAGE,
+    manifest_url,
     UpdateCancelled,
     UpdateInfo,
     check_for_update,
@@ -483,15 +487,46 @@ class MainWindow(QMainWindow):
                 thread.wait(3000)
         super().closeEvent(event)
 
+    def about_rows(self) -> list[tuple[str, str]]:
+        """Everything identifying this copy, for the About box and support."""
+        rows = list(build_details())
+        rows.append(("Qt", f"PySide6 {PySide6.__version__} / Qt {qVersion()}"))
+        rows.append(("Updates", manifest_url()))
+        return rows
+
     def _show_about(self) -> None:
-        QMessageBox.about(
-            self,
-            "About AutoBOM",
-            f"<b>AutoBOM {__version__}</b><br><br>"
+        rows = self.about_rows()
+        table = "".join(
+            "<tr>"
+            f"<td style='padding-right:14px; vertical-align:top'><b>{escape(label)}</b></td>"
+            f"<td style='vertical-align:top'>{escape(value)}</td>"
+            "</tr>"
+            for label, value in rows
+        )
+
+        box = QMessageBox(self)
+        box.setWindowTitle("About AutoBOM")
+        box.setTextFormat(Qt.TextFormat.RichText)
+        box.setText(
+            f"<b>AutoBOM {escape(__version__)}</b><br><br>"
             "CNC sheet metal BOM processor.<br>"
             "Filters SHEET,AL rows, multiplies by IL assembly quantities, "
-            "classifies by thickness and Trumpf fit, and writes the 5-sheet workbook.",
+            "classifies by thickness and Trumpf fit, and writes the 5-sheet "
+            "workbook.<br><br>"
+            f"<table style='font-size:small'>{table}</table>"
         )
+        copy = box.addButton("Copy details", QMessageBox.ButtonRole.ActionRole)
+        box.addButton(QMessageBox.StandardButton.Ok)
+        box.setDefaultButton(QMessageBox.StandardButton.Ok)
+        box.exec()
+
+        if box.clickedButton() is copy:
+            # Plain text, so it can be pasted into an email when something is
+            # wrong and the question is "which build are you on?".
+            QApplication.clipboard().setText(
+                "\n".join(f"{label}: {value}" for label, value in rows)
+            )
+            self.statusBar().showMessage("Build details copied to the clipboard", 4000)
 
 
 def main(argv: list[str] | None = None) -> int:

@@ -64,6 +64,10 @@ were hard to learn and are easy to get wrong:
   swap is rename-aside-then-replace, undone on failure. See
   `autobom/updater/installer.py` and the tests around it — that code can leave
   a machine with no working application if it is got wrong.
+- **Do not re-export a name from `autobom/__init__.py` that matches a
+  submodule.** `from .version import version` made `from autobom import
+  version` hand back the function, so `version.build_info` raised. Cost two
+  debugging detours before the shadowing was removed.
 - **`urlparse` reads a Windows drive letter as a URL scheme.** `C:\x` parses as
   scheme `c`. Any scheme shorter than two characters is a drive, not a protocol.
 - **Verify against real output before believing a diff.** The original reference

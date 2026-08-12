@@ -243,6 +243,16 @@ undone, so a failed update leaves a working application rather than none.
 or an executable in a location you cannot write to, such as Program Files
 without elevation. The download page is still offered in those cases.
 
+### Identifying a copy
+
+**Help → About AutoBOM** reports the version, the CI build number, the commit it
+was built from, where the executable lives, the Python and Qt versions, and the
+update source it polls. **Copy details** puts all of that on the clipboard as
+plain text, so "which build are you on?" has a paste-able answer.
+
+A build made locally rather than by CI says so, instead of showing a build
+number that means nothing.
+
 ### Verifying a copy
 
 ```
