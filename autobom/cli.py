@@ -6,7 +6,7 @@ import argparse
 import sys
 from pathlib import Path
 
-from .core import process, select_sheets, write_workbook
+from .core import build_summary, process, select_sheets, write_workbook
 from .core.parser import looks_like_il
 from .core.selftest import run_selftest
 from .version import describe
@@ -123,8 +123,12 @@ def main(argv: list[str] | None = None) -> int:
 
     destination = write_workbook(result.parts, Path(args.output))
     counts = {name: len(rows) for name, rows in select_sheets(result.parts).items()}
-    summary = ", ".join(f"{name}: {count}" for name, count in counts.items())
-    print(f"\nWrote {destination} ({summary})")
+    sheets = ", ".join(f"{name}: {count}" for name, count in counts.items())
+    print(f"\nWrote {destination} ({sheets})")
+    print()
+    print(f"{'Category':<22}{'Line items':>12}{'Pieces':>10}")
+    for label, line_items, pieces in build_summary(result.parts):
+        print(f"{label:<22}{line_items:>12}{pieces:>10}")
     return 0
 
 

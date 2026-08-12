@@ -1,7 +1,14 @@
 """Pure BOM-processing logic; imports no GUI toolkit."""
 
 from .classify import classify_thickness, fits_trumpf, format_size
-from .excel import SHEET_ORDER, build_workbook, select_sheets, write_workbook
+from .excel import (
+    SHEET_ORDER,
+    build_summary,
+    build_workbook,
+    select_sheets,
+    tally,
+    write_workbook,
+)
 from .models import CrossCheck, Part, ProcessResult
 from .pipeline import aggregate, cross_check, process, sort_parts
 
@@ -11,6 +18,7 @@ __all__ = [
     "ProcessResult",
     "SHEET_ORDER",
     "aggregate",
+    "build_summary",
     "build_workbook",
     "classify_thickness",
     "cross_check",
@@ -19,5 +27,6 @@ __all__ = [
     "process",
     "select_sheets",
     "sort_parts",
+    "tally",
     "write_workbook",
 ]

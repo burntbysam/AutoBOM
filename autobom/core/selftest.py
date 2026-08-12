@@ -12,7 +12,7 @@ import tempfile
 from decimal import Decimal
 from pathlib import Path
 
-from .excel import SHEET_ORDER, select_sheets
+from .excel import SHEET_ORDER, build_summary, select_sheets
 from .pipeline import process
 
 # One assembly exercising every classification branch, plus the individual
@@ -41,6 +41,16 @@ _EXPECTED_ROWS = {
     "8701-300-I": (Decimal(6), '1/8"', "60x120", "T"),
 }
 _EXPECTED_SHEET_COUNTS = {"1-8": 3, "3-16": 1, "F Parts": 1, "Other": 1, "All": 6}
+
+# label -> (line items, pieces). Grouped by thickness, so the 1/8" row includes
+# the F part that does not fit the Trumpf.
+_EXPECTED_SUMMARY = {
+    '1/8"': (4, 15),
+    '3/16"': (1, 2),
+    '1/8" + 3/16" total': (5, 17),
+    "OTHER thickness": (1, 2),
+    "Grand total": (6, 19),
+}
 
 
 def _write(directory: Path, name: str, rows: list[str]) -> Path:
@@ -101,6 +111,23 @@ def run_selftest() -> tuple[bool, list[str]]:
         report.append(
             "sheets:              "
             + ", ".join(f"{name}: {counts[name]}" for name in SHEET_ORDER)
+        )
+
+        summary = {
+            label: (line_items, pieces)
+            for label, line_items, pieces in build_summary(result.parts)
+        }
+        for label, expected in _EXPECTED_SUMMARY.items():
+            if summary.get(label) != expected:
+                failures.append(
+                    f"summary {label}: expected {expected}, got {summary.get(label)}"
+                )
+        report.append(
+            "totals:              "
+            + ", ".join(
+                f"{label} {items}/{pieces}"
+                for label, (items, pieces) in summary.items()
+            )
         )
 
         # Writing the workbook proves openpyxl is bundled and working, which a

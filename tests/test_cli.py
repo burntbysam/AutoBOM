@@ -9,6 +9,16 @@ from .conftest import write_csv
 EIGHTH = "SHEET,AL,SMOOTH,3003,.125,60x120"
 
 
+def data_part_numbers(path, sheet="All"):
+    """Part numbers from the data region, stopping at the totals block."""
+    numbers = []
+    for row in load_workbook(path)[sheet].iter_rows(min_row=2, values_only=True):
+        if row[1] is None:
+            break
+        numbers.append(row[1])
+    return numbers
+
+
 def make_job(tmp_path, extra_il_rows=()):
     write_csv(tmp_path, "8701-01101-I.csv", [f"1|1|{EIGHTH}|X|A|"])
     write_csv(
@@ -52,10 +62,7 @@ class TestMain:
         out = tmp_path / "out.xlsx"
         assert main([str(job), "-o", str(out), "--ignore-flags"]) == 0
         # The unmatched bus section must not appear as a fabricated part row.
-        numbers = [
-            row[1] for row in load_workbook(out)["All"].iter_rows(min_row=2, values_only=True)
-        ]
-        assert numbers == ["8701-1101-1"]
+        assert data_part_numbers(out) == ["8701-1101-1"]
 
     def test_individual_parts_land_in_the_workbook(self, tmp_path):
         job = make_job(tmp_path, extra_il_rows=["2|2|SPLICE COVER|JB-2724-06|"])

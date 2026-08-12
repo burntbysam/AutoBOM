@@ -4,7 +4,14 @@ from decimal import Decimal
 
 from openpyxl import load_workbook
 
-from autobom.core.excel import COLUMNS, SHEET_ORDER, select_sheets, write_workbook
+from autobom.core.excel import (
+    COLUMNS,
+    SHEET_ORDER,
+    build_summary,
+    select_sheets,
+    tally,
+    write_workbook,
+)
 from autobom.core.models import Part
 
 
@@ -99,4 +106,102 @@ class TestWorkbook:
         workbook = load_workbook(write_workbook([], tmp_path / "out.xlsx"))
         assert workbook.sheetnames == list(SHEET_ORDER)
         for name in SHEET_ORDER:
-            assert workbook[name].max_row == 1
+            # Header, a blank separator, then the totals block.
+            assert [cell.value for cell in workbook[name][1]] == list(COLUMNS)
+            assert workbook[name][2][0].value is None
+
+    def test_empty_sheet_totals_are_zero(self, tmp_path):
+        workbook = load_workbook(write_workbook([], tmp_path / "out.xlsx"))
+        row = workbook["1-8"][3]
+        assert row[0].value == 0
+        assert row[1].value == "TOTAL PIECES"
+        assert row[2].value == 0
+
+
+class TestTally:
+    def test_counts_line_items_and_pieces(self):
+        assert tally(PARTS) == (6, 6)
+
+    def test_pieces_sums_the_quantity_column(self):
+        parts = [part("A", quantity="3"), part("B", quantity="4")]
+        assert tally(parts) == (2, 7)
+
+    def test_empty(self):
+        assert tally([]) == (0, 0)
+
+    def test_whole_totals_stay_integers(self):
+        line_items, pieces = tally([part("A", quantity="2"), part("B", quantity="2")])
+        assert isinstance(pieces, int)
+
+
+class TestSummary:
+    def test_groups_by_thickness_regardless_of_trumpf_fit(self):
+        summary = dict((label, (items, pieces)) for label, items, pieces in build_summary(PARTS))
+        # 1/8": one T part and one F part.
+        assert summary['1/8"'] == (2, 2)
+        # 3/16": one T part and one F part.
+        assert summary['3/16"'] == (2, 2)
+        assert summary["OTHER thickness"] == (2, 2)
+
+    def test_combined_row_is_the_two_stock_thicknesses(self):
+        summary = dict((label, (items, pieces)) for label, items, pieces in build_summary(PARTS))
+        assert summary['1/8" + 3/16" total'] == (4, 4)
+
+    def test_rows_add_up_to_the_grand_total(self):
+        summary = dict((label, (items, pieces)) for label, items, pieces in build_summary(PARTS))
+        parts = summary['1/8"'][0] + summary['3/16"'][0] + summary["OTHER thickness"][0]
+        pieces = summary['1/8"'][1] + summary['3/16"'][1] + summary["OTHER thickness"][1]
+        assert (parts, pieces) == summary["Grand total"]
+
+    def test_quantities_are_summed_not_counted(self):
+        parts = [
+            part("A", quantity="5"),
+            part("B", thickness='3/16"', quantity="7"),
+            part("C", thickness="OTHER", quantity="2"),
+        ]
+        summary = dict((label, (items, pieces)) for label, items, pieces in build_summary(parts))
+        assert summary['1/8"'] == (1, 5)
+        assert summary['1/8" + 3/16" total'] == (2, 12)
+        assert summary["Grand total"] == (3, 14)
+
+
+class TestWorkbookTotals:
+    def test_summary_block_is_on_the_all_sheet(self, tmp_path):
+        sheet = load_workbook(write_workbook(PARTS, tmp_path / "out.xlsx"))["All"]
+        labels = [row[1].value for row in sheet.iter_rows(min_row=2)]
+        assert "SUMMARY" in labels
+        for expected in ('1/8"', '3/16"', '1/8" + 3/16" total', "OTHER thickness", "Grand total"):
+            assert expected in labels
+
+    def test_category_sheets_get_a_totals_line(self, tmp_path):
+        workbook = load_workbook(write_workbook(PARTS, tmp_path / "out.xlsx"))
+        for name in ("1-8", "3-16", "F Parts", "Other"):
+            labels = [row[1].value for row in workbook[name].iter_rows(min_row=2)]
+            assert "TOTAL PIECES" in labels
+
+    def test_sheet_total_matches_its_rows(self, tmp_path):
+        workbook = load_workbook(write_workbook(PARTS, tmp_path / "out.xlsx"))
+        for name, rows in select_sheets(PARTS).items():
+            if name == "All":
+                continue
+            sheet = workbook[name]
+            total_row = next(
+                row for row in sheet.iter_rows(min_row=2) if row[1].value == "TOTAL PIECES"
+            )
+            assert total_row[0].value == tally(rows)[1]
+            assert total_row[2].value == tally(rows)[0]
+
+    def test_summary_is_separated_from_the_data_by_a_blank_row(self, tmp_path):
+        sheet = load_workbook(write_workbook(PARTS, tmp_path / "out.xlsx"))["All"]
+        # Data occupies rows 2..7 for six parts; row 8 must be blank.
+        assert all(cell.value is None for cell in sheet[len(PARTS) + 2])
+
+    def test_data_rows_are_unaffected(self, tmp_path):
+        sheet = load_workbook(write_workbook(PARTS, tmp_path / "out.xlsx"))["All"]
+        rows = [
+            tuple(row)
+            for row in sheet.iter_rows(
+                min_row=2, max_row=len(PARTS) + 1, values_only=True
+            )
+        ]
+        assert [row[1] for row in rows] == [p.part_number for p in PARTS]

@@ -18,14 +18,14 @@ time.
 4. If the cross-check finds a mismatch, a **⚠️ FLAGS — REVIEW REQUIRED** dialog
    explains it and waits. Nothing is written until you choose *Add missing
    files* or *Ignore and continue*.
-5. Pick where to save. You get `OUTPUT__<job>_BOM_Quantities.xlsx`.
+5. Pick where to save. You get `<job>_BOM_Quantities.xlsx`.
 
 ### Command line
 
 The same engine runs headless, which is handy for batch jobs:
 
 ```
-python -m autobom path/to/job-folder -o OUTPUT__8701_BOM_Quantities.xlsx
+python -m autobom path/to/job-folder -o 8701_BOM_Quantities.xlsx
 ```
 
 Files are sorted into BOMs and ILs by name (anything starting `IL` is an IL);
@@ -84,6 +84,34 @@ everything else is `OTHER` and gets flagged for review.
 
 An OTHER part goes on `Other` and `All` only. An F part goes on `F Parts` and
 `All` only.
+
+### Totals
+
+Every sheet ends with a totals line below the data — the piece count sits under
+the `Qty` column it sums, alongside the number of line items:
+
+```
+63   TOTAL PIECES   35   LINE ITEMS
+```
+
+The `All` sheet carries the full tally instead, grouped **by thickness**, so an
+F part counts toward its own thickness rather than being set aside:
+
+```
+SUMMARY
+Category               Line items   Pieces
+1/8"                           38       66
+3/16"                           0        0
+1/8" + 3/16" total             38       66
+OTHER thickness                 0        0
+Grand total                    38       66
+```
+
+The three category rows add up to the grand total: nothing is counted twice and
+nothing is left out. Because the grouping is by thickness, the `1/8"` row here
+can exceed the `1-8` sheet's own total — the sheet holds only parts that also
+fit the Trumpf, while this row counts every 1/8" part. Both numbers are on the
+face of the workbook. The same tally prints to the console after a run.
 
 ### Cross-check flags
 

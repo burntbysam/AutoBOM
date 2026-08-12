@@ -25,7 +25,7 @@ from PySide6.QtWidgets import (
 )
 
 from .. import __version__
-from ..core import process, select_sheets, write_workbook
+from ..core import build_summary, process, select_sheets, write_workbook
 from ..core.models import ProcessResult
 from ..updater.github import RELEASE_PAGE, UpdateInfo, check_for_update
 from .widgets import FileDropList, FlagsDialog, describe_flags
@@ -205,8 +205,8 @@ class MainWindow(QMainWindow):
         """Name the workbook after the job number when every file agrees on one."""
         jobs = {Path(name).stem.split("-")[0] for name in result.bom_files}
         if len(jobs) == 1:
-            return f"OUTPUT__{jobs.pop()}_BOM_Quantities.xlsx"
-        return "OUTPUT__BOM_Quantities.xlsx"
+            return f"{jobs.pop()}_BOM_Quantities.xlsx"
+        return "BOM_Quantities.xlsx"
 
     def _save(self, result: ProcessResult) -> None:
         suggested = str(Path.home() / self._default_name(result))
@@ -231,6 +231,10 @@ class MainWindow(QMainWindow):
             "Wrote " + str(destination) + "\n  "
             + "\n  ".join(f"{sheet}: {count} row(s)" for sheet, count in counts.items())
         )
+        self._append("")
+        self._append(f"{'Category':<24}{'Line items':>12}{'Pieces':>10}")
+        for label, line_items, pieces in build_summary(result.parts):
+            self._append(f"{label:<24}{line_items:>12}{pieces:>10}")
         self.statusBar().showMessage(f"Saved {destination.name}")
 
         box = QMessageBox(self)
