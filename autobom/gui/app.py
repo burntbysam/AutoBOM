@@ -5,7 +5,7 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-from PySide6.QtCore import QObject, Qt, QThread, Signal
+from PySide6.QtCore import Qt, QThread, Signal
 from PySide6.QtGui import QAction, QDesktopServices, QGuiApplication
 from PySide6.QtCore import QUrl
 from PySide6.QtWidgets import (
@@ -31,13 +31,22 @@ from ..updater.github import RELEASE_PAGE, UpdateInfo, check_for_update
 from .widgets import FileDropList, FlagsDialog, describe_flags
 
 
-class UpdateWorker(QObject):
-    """Runs the release check off the UI thread; failures are silent."""
+class UpdateCheck(QThread):
+    """Runs the release check off the UI thread; failures are silent.
 
-    finished = Signal(object)
+    This subclasses QThread and overrides run() rather than using the
+    worker-object-plus-moveToThread pattern. That pattern needs something to
+    keep a reference to the worker: a local one is garbage collected as soon as
+    the launching function returns, the C++ object goes with it, and the check
+    silently never runs. Overriding run() leaves nothing to lose track of, and
+    the thread reaches the end of run() so `finished` is actually emitted.
+    """
+
+    # Not named `finished`; QThread already has a signal by that name.
+    checked = Signal(object)
 
     def run(self) -> None:
-        self.finished.emit(check_for_update())
+        self.checked.emit(check_for_update())
 
 
 class MainWindow(QMainWindow):
@@ -255,23 +264,28 @@ class MainWindow(QMainWindow):
 
     # -- updates -------------------------------------------------------
     def _start_update_check(self, interactive: bool = False) -> None:
-        if self._update_thread is not None:
+        # Only an actually-running check blocks a new one. Testing the
+        # attribute alone would wedge the menu item forever if a thread ever
+        # failed to report that it had finished.
+        if self._update_thread is not None and self._update_thread.isRunning():
+            if interactive:
+                self.statusBar().showMessage("Already checking for updates…", 4000)
             return
-        thread = QThread(self)
-        worker = UpdateWorker()
-        worker.moveToThread(thread)
-        thread.started.connect(worker.run)
-        worker.finished.connect(lambda info: self._on_update_checked(info, interactive))
-        worker.finished.connect(thread.quit)
-        thread.finished.connect(worker.deleteLater)
+
+        thread = UpdateCheck(self)
+        thread.checked.connect(
+            lambda info: self._on_update_checked(info, interactive)
+        )
         thread.finished.connect(self._clear_update_thread)
+        # Parented to the window and held here, so nothing can be collected
+        # while the check is in flight.
         self._update_thread = thread
         thread.start()
 
     def _clear_update_thread(self) -> None:
-        if self._update_thread is not None:
-            self._update_thread.deleteLater()
-        self._update_thread = None
+        thread, self._update_thread = self._update_thread, None
+        if thread is not None:
+            thread.deleteLater()
 
     def _on_update_checked(self, info: UpdateInfo | None, interactive: bool) -> None:
         if info is None:
@@ -307,8 +321,9 @@ class MainWindow(QMainWindow):
         """Let an in-flight update check finish so Qt does not warn on teardown."""
         thread = self._update_thread
         if thread is not None and thread.isRunning():
-            thread.quit()
-            thread.wait(2000)
+            # run() returns on its own once the check completes or times out;
+            # quit() only affects an event loop, which this thread does not run.
+            thread.wait(3000)
         super().closeEvent(event)
 
     def _show_about(self) -> None:
