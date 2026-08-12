@@ -18,6 +18,7 @@ from PySide6.QtWidgets import (
     QMainWindow,
     QMessageBox,
     QPlainTextEdit,
+    QProgressDialog,
     QPushButton,
     QSplitter,
     QVBoxLayout,
@@ -28,7 +29,14 @@ from .. import __version__
 from ..core import build_summary, process, select_sheets, write_workbook
 from ..core.models import ProcessResult
 from ..core.naming import default_workbook_name
-from ..updater.github import RELEASE_PAGE, UpdateInfo, check_for_update
+from ..updater import installer
+from ..updater.github import (
+    RELEASE_PAGE,
+    UpdateCancelled,
+    UpdateInfo,
+    check_for_update,
+    download_asset,
+)
 from .widgets import FileDropList, FlagsDialog, describe_flags
 
 
@@ -50,6 +58,63 @@ class UpdateCheck(QThread):
         self.checked.emit(check_for_update())
 
 
+class UpdateInstall(QThread):
+    """Download, verify, self-test and swap in a new build.
+
+    Same QThread-subclass shape as UpdateCheck, and for the same reason: a
+    worker object with no retained reference gets collected and the work
+    silently never happens.
+    """
+
+    stage = Signal(str)
+    progress = Signal(int, int)  # received, total
+    succeeded = Signal(str)  # path of the installed executable
+    failed = Signal(str)
+
+    def __init__(self, info: UpdateInfo, target: Path, parent=None) -> None:
+        super().__init__(parent)
+        self._info = info
+        self._target = Path(target)
+        self._cancelled = False
+
+    def cancel(self) -> None:
+        self._cancelled = True
+
+    def run(self) -> None:
+        staging = installer.staging_path(self._target)
+        try:
+            self.stage.emit("Downloading…")
+            download_asset(
+                self._info,
+                staging,
+                on_progress=lambda got, total: self.progress.emit(got, total),
+                should_cancel=lambda: self._cancelled,
+            )
+
+            # Checksum is already verified inside download_asset; the self-test
+            # is what catches a build that is intact but broken.
+            self.stage.emit("Checking the new version…")
+            ok, detail = installer.run_selftest(staging)
+            if not ok:
+                staging.unlink(missing_ok=True)
+                self.failed.emit(
+                    "The downloaded version failed its own self-test, so it was "
+                    "not installed and your current copy is untouched.\n\n" + detail
+                )
+                return
+
+            self.stage.emit("Installing…")
+            installer.swap_in(staging, self._target)
+        except UpdateCancelled:
+            self.failed.emit("")  # cancelled: no error to report
+            return
+        except Exception as exc:  # noqa: BLE001 - surface anything, never crash
+            Path(staging).unlink(missing_ok=True)
+            self.failed.emit(str(exc))
+            return
+        self.succeeded.emit(str(self._target))
+
+
 class MainWindow(QMainWindow):
     def __init__(self) -> None:
         super().__init__()
@@ -57,6 +122,10 @@ class MainWindow(QMainWindow):
         self.resize(1000, 680)
         self._result: ProcessResult | None = None
         self._update_thread: QThread | None = None
+        self._install_thread: QThread | None = None
+        # An update leaves the previous build beside the new one; it cannot
+        # be deleted while it is still running, so it is cleared on launch.
+        installer.cleanup_backups()
 
         self._build_menu()
         self._build_body()
@@ -302,26 +371,116 @@ class MainWindow(QMainWindow):
                 )
             return
 
+        target = installer.current_executable()
+        can_install = installer.can_install_in_place(target)
+
         box = QMessageBox(self)
         box.setWindowTitle("Update available")
         box.setText(
             f"AutoBOM {info.latest_version} is available (you have {__version__})."
         )
+        if can_install:
+            box.setInformativeText(
+                "AutoBOM can download and install it for you, then restart. "
+                "The new version is checked and tested before it replaces this one."
+            )
         if info.notes:
             box.setDetailedText(info.notes)
-        open_page = box.addButton("Open download page", QMessageBox.ButtonRole.AcceptRole)
+
+        install = None
+        if can_install:
+            install = box.addButton("Update now", QMessageBox.ButtonRole.AcceptRole)
+        open_page = box.addButton(
+            "Open download page", QMessageBox.ButtonRole.ActionRole
+        )
         box.addButton("Later", QMessageBox.ButtonRole.RejectRole)
+        if install is not None:
+            box.setDefaultButton(install)
         box.exec()
-        if box.clickedButton() is open_page:
+
+        clicked = box.clickedButton()
+        if install is not None and clicked is install:
+            self._install_update(info, target)
+        elif clicked is open_page:
             QDesktopServices.openUrl(QUrl(info.release_page or RELEASE_PAGE))
 
+    def _install_update(self, info: UpdateInfo, target: Path) -> None:
+        progress = QProgressDialog("Starting…", "Cancel", 0, 100, self)
+        progress.setWindowTitle("Updating AutoBOM")
+        progress.setWindowModality(Qt.WindowModality.WindowModal)
+        progress.setAutoClose(False)
+        progress.setAutoReset(False)
+        progress.setMinimumDuration(0)
+
+        thread = UpdateInstall(info, target, self)
+
+        def on_progress(received: int, total: int) -> None:
+            if total > 0:
+                progress.setMaximum(100)
+                progress.setValue(int(received * 100 / total))
+            else:
+                progress.setMaximum(0)  # indeterminate
+            progress.setLabelText(
+                f"Downloading… {received / 1_048_576:.0f} of {total / 1_048_576:.0f} MB"
+                if total
+                else f"Downloading… {received / 1_048_576:.0f} MB"
+            )
+
+        def on_stage(text: str) -> None:
+            progress.setLabelText(text)
+            if not text.startswith("Downloading"):
+                # Verifying and installing have no measurable progress.
+                progress.setMaximum(0)
+
+        def on_failed(message: str) -> None:
+            progress.close()
+            self._install_thread = None
+            if message:  # empty means the user cancelled
+                QMessageBox.warning(self, "Update not installed", message)
+            else:
+                self.statusBar().showMessage("Update cancelled", 4000)
+
+        def on_succeeded(path: str) -> None:
+            progress.close()
+            self._install_thread = None
+            answer = QMessageBox.question(
+                self,
+                "Update installed",
+                f"AutoBOM {info.latest_version} is installed.\n\n"
+                "Restart now to use it?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.Yes,
+            )
+            if answer == QMessageBox.StandardButton.Yes:
+                try:
+                    installer.relaunch(Path(path))
+                except OSError as exc:
+                    QMessageBox.warning(
+                        self,
+                        "Could not restart",
+                        f"The update is installed — please start AutoBOM again "
+                        f"yourself.\n\n{exc}",
+                    )
+                    return
+                self.close()
+                QApplication.quit()
+
+        thread.progress.connect(on_progress)
+        thread.stage.connect(on_stage)
+        thread.failed.connect(on_failed)
+        thread.succeeded.connect(on_succeeded)
+        progress.canceled.connect(thread.cancel)
+
+        self._install_thread = thread
+        thread.start()
+
     def closeEvent(self, event) -> None:
-        """Let an in-flight update check finish so Qt does not warn on teardown."""
-        thread = self._update_thread
-        if thread is not None and thread.isRunning():
-            # run() returns on its own once the check completes or times out;
-            # quit() only affects an event loop, which this thread does not run.
-            thread.wait(3000)
+        """Let in-flight background work finish so Qt does not warn on teardown."""
+        # run() returns on its own once each job completes or times out; quit()
+        # would only affect an event loop, which these threads do not run.
+        for thread in (self._update_thread, self._install_thread):
+            if thread is not None and thread.isRunning():
+                thread.wait(3000)
         super().closeEvent(event)
 
     def _show_about(self) -> None:

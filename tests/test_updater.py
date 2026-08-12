@@ -186,6 +186,59 @@ class TestDownloadAsset:
         )
         assert good.read_bytes() == b"payload"
 
+    def test_reports_progress(self, tmp_path):
+        source = tmp_path / "source.exe"
+        payload = b"x" * (github.CHUNK * 3 + 17)
+        source.write_bytes(payload)
+        seen: list[tuple[int, int]] = []
+
+        github.download_asset(
+            info(url=str(source), size=len(payload)),
+            tmp_path / "out.exe",
+            on_progress=lambda got, total: seen.append((got, total)),
+        )
+        assert len(seen) > 1, "a 50 MB download must report more than once"
+        assert seen[-1][0] == len(payload)
+        assert all(total == len(payload) for _, total in seen)
+
+    def test_progress_is_monotonic(self, tmp_path):
+        source = tmp_path / "source.exe"
+        source.write_bytes(b"y" * (github.CHUNK * 4))
+        seen: list[int] = []
+        github.download_asset(
+            info(url=str(source)),
+            tmp_path / "out.exe",
+            on_progress=lambda got, total: seen.append(got),
+        )
+        assert seen == sorted(seen)
+
+    def test_cancellation_stops_and_leaves_nothing_behind(self, tmp_path):
+        source = tmp_path / "source.exe"
+        source.write_bytes(b"z" * (github.CHUNK * 8))
+        destination = tmp_path / "out.exe"
+
+        with pytest.raises(github.UpdateCancelled):
+            github.download_asset(
+                info(url=str(source)),
+                destination,
+                should_cancel=lambda: True,
+            )
+        # A half-written binary must never be left where it could be run.
+        assert not destination.exists()
+
+    def test_a_failed_download_leaves_nothing_behind(self, tmp_path, monkeypatch):
+        source = tmp_path / "source.exe"
+        source.write_bytes(b"w" * github.CHUNK * 2)
+        destination = tmp_path / "out.exe"
+
+        def explode(*args, **kwargs):
+            raise OSError("connection reset")
+
+        monkeypatch.setattr(github, "_open_source", explode)
+        with pytest.raises(OSError):
+            github.download_asset(info(url=str(source)), destination)
+        assert not destination.exists()
+
     def test_a_mismatched_download_is_deleted(self, tmp_path):
         source = tmp_path / "source.exe"
         source.write_bytes(b"payload")

@@ -221,6 +221,28 @@ set AUTOBOM_UPDATE_URL=\\server\shared\AutoBOM\latest.json
 The check runs on a background thread and fails silently when the machine is
 offline, so AutoBOM still starts on an isolated network.
 
+### Updating in place
+
+When a newer build exists, the dialog offers **Update now**. AutoBOM downloads
+it with a progress bar you can cancel, and installs it only after two checks:
+
+1. the download matches the published SHA256, and
+2. the downloaded build passes its own `--selftest`.
+
+The second is the one that matters. A checksum proves the file arrived intact,
+not that it works — a build that shipped a broken classifier would be perfectly
+intact and would quietly produce the wrong cut list. Anything that fails either
+check is deleted and the working copy is left untouched.
+
+Windows will not let a running program overwrite its own image, but it will let
+it be renamed, so the live build is renamed aside, the new one takes its place,
+and the old copy is deleted on next launch. If the swap fails the rename is
+undone, so a failed update leaves a working application rather than none.
+
+**Update now** is hidden when there is nothing to replace — running from source,
+or an executable in a location you cannot write to, such as Program Files
+without elevation. The download page is still offered in those cases.
+
 ### Verifying a copy
 
 ```

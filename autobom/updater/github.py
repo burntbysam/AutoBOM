@@ -155,11 +155,40 @@ def sha256_of(path: Path) -> str:
     return digest.hexdigest()
 
 
-def download_asset(info: UpdateInfo, destination: Path) -> Path:
+class UpdateCancelled(Exception):
+    """Raised when the user aborts a download."""
+
+
+CHUNK = 256 * 1024
+
+
+def _open_source(location: str, timeout: int):
+    """Return ``(stream, total_bytes)`` for an https URL or a local/UNC path."""
+    if is_remote(location):
+        request = urllib.request.Request(
+            location, headers={"User-Agent": f"AutoBOM/{version()}"}
+        )
+        response = urllib.request.urlopen(request, timeout=timeout)
+        try:
+            total = int(response.headers.get("Content-Length") or 0)
+        except (TypeError, ValueError):
+            total = 0
+        return response, total
+    path = Path(location)
+    return path.open("rb"), path.stat().st_size
+
+
+def download_asset(
+    info: UpdateInfo,
+    destination: Path,
+    on_progress=None,
+    should_cancel=None,
+) -> Path:
     """Download the new build and verify it before handing back the path.
 
-    A download that does not match the published checksum is deleted rather
-    than left on disk where somebody might run it.
+    Streamed in chunks so a 50 MB download can report progress and be
+    cancelled. A download that does not match the published checksum is
+    deleted rather than left on disk where somebody might run it.
     """
     # Plain paths (empty scheme, UNC shares, Windows drive letters) are a
     # supported update source; a remote one must be encrypted.
@@ -168,7 +197,29 @@ def download_asset(info: UpdateInfo, destination: Path) -> Path:
 
     destination = Path(destination)
     destination.parent.mkdir(parents=True, exist_ok=True)
-    destination.write_bytes(_read_source(info.url, DOWNLOAD_TIMEOUT_SECONDS))
+
+    total = info.size or 0
+    received = 0
+    stream, stream_total = _open_source(info.url, DOWNLOAD_TIMEOUT_SECONDS)
+    total = total or stream_total
+    try:
+        with destination.open("wb") as handle:
+            while True:
+                if should_cancel is not None and should_cancel():
+                    raise UpdateCancelled()
+                block = stream.read(CHUNK)
+                if not block:
+                    break
+                handle.write(block)
+                received += len(block)
+                if on_progress is not None:
+                    on_progress(received, total)
+    except BaseException:
+        # Never leave a partial or abandoned binary where it could be run.
+        destination.unlink(missing_ok=True)
+        raise
+    finally:
+        stream.close()
 
     if info.sha256:
         actual = sha256_of(destination)

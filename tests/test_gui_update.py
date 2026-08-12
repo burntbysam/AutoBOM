@@ -151,3 +151,99 @@ class TestShutdown:
         win.show()
         win.close()  # must return promptly even with a check in flight
         assert pump(qapp, lambda: True)
+
+
+class TestInstallThread:
+    """UpdateInstall is the code that can leave a machine with no working app."""
+
+    def local_update(self, tmp_path, payload=b"NEW BUILD"):
+        source = tmp_path / "published.exe"
+        source.write_bytes(payload)
+        from autobom.updater.github import sha256_of
+
+        return UpdateInfo(
+            current_version="1.0.0",
+            current_build_id="1.aaaaaaa",
+            latest_version="1.1.0",
+            latest_build_id="9.bbbbbbb",
+            url=str(source),
+            sha256=sha256_of(source),
+            size=len(payload),
+        )
+
+    def drive(self, qapp, thread):
+        done: list[tuple[str, str]] = []
+        thread.succeeded.connect(lambda path: done.append(("ok", path)))
+        thread.failed.connect(lambda message: done.append(("fail", message)))
+        thread.start()
+        pump(qapp, lambda: bool(done), timeout=30)
+        pump(qapp, lambda: not thread.isRunning(), timeout=10)
+        return done
+
+    def test_installs_a_good_build(self, qapp, tmp_path, monkeypatch):
+        target = tmp_path / "AutoBOM.exe"
+        target.write_bytes(b"OLD BUILD")
+        monkeypatch.setattr(
+            appmod.installer, "run_selftest", lambda *a, **k: (True, "SELF-TEST PASSED")
+        )
+
+        thread = appmod.UpdateInstall(self.local_update(tmp_path), target)
+        done = self.drive(qapp, thread)
+
+        assert done and done[0][0] == "ok", done
+        assert target.read_bytes() == b"NEW BUILD"
+
+    def test_refuses_a_build_that_fails_its_selftest(self, qapp, tmp_path, monkeypatch):
+        target = tmp_path / "AutoBOM.exe"
+        target.write_bytes(b"OLD BUILD")
+        monkeypatch.setattr(
+            appmod.installer, "run_selftest", lambda *a, **k: (False, "rules missing")
+        )
+
+        thread = appmod.UpdateInstall(self.local_update(tmp_path), target)
+        done = self.drive(qapp, thread)
+
+        assert done and done[0][0] == "fail"
+        # The working copy must be untouched, and the reject cleaned away.
+        assert target.read_bytes() == b"OLD BUILD"
+        assert not appmod.installer.staging_path(target).exists()
+
+    def test_a_corrupt_download_never_reaches_the_selftest(
+        self, qapp, tmp_path, monkeypatch
+    ):
+        target = tmp_path / "AutoBOM.exe"
+        target.write_bytes(b"OLD BUILD")
+        info = self.local_update(tmp_path)
+        bad = UpdateInfo(
+            current_version=info.current_version,
+            current_build_id=info.current_build_id,
+            latest_version=info.latest_version,
+            latest_build_id=info.latest_build_id,
+            url=info.url,
+            sha256="00" * 32,
+            size=info.size,
+        )
+        ran = []
+        monkeypatch.setattr(
+            appmod.installer,
+            "run_selftest",
+            lambda *a, **k: (ran.append(1), (True, ""))[1],
+        )
+
+        done = self.drive(qapp, appmod.UpdateInstall(bad, target))
+        assert done and done[0][0] == "fail"
+        assert "checksum" in done[0][1]
+        assert not ran, "a corrupt download must not be executed"
+        assert target.read_bytes() == b"OLD BUILD"
+
+    def test_cancelling_leaves_the_current_build_alone(self, qapp, tmp_path):
+        target = tmp_path / "AutoBOM.exe"
+        target.write_bytes(b"OLD BUILD")
+
+        thread = appmod.UpdateInstall(self.local_update(tmp_path), target)
+        thread.cancel()
+        done = self.drive(qapp, thread)
+
+        assert done and done[0][0] == "fail"
+        assert done[0][1] == ""  # empty message means cancelled, not an error
+        assert target.read_bytes() == b"OLD BUILD"

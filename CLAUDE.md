@@ -58,6 +58,12 @@ were hard to learn and are easy to get wrong:
   with no retained reference dies silently and the thread never finishes. Prefer
   subclassing QThread and overriding `run()`. This broke the update check
   completely; `tests/test_gui_update.py` guards it.
+- **Updates install in place and must fail safe.** A downloaded build is
+  swapped in only after its SHA256 matches *and* it passes its own
+  `--selftest`; a checksum cannot tell a working build from a broken one. The
+  swap is rename-aside-then-replace, undone on failure. See
+  `autobom/updater/installer.py` and the tests around it — that code can leave
+  a machine with no working application if it is got wrong.
 - **`urlparse` reads a Windows drive letter as a URL scheme.** `C:\x` parses as
   scheme `c`. Any scheme shorter than two characters is a drive, not a protocol.
 - **Verify against real output before believing a diff.** The original reference
