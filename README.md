@@ -179,8 +179,22 @@ until it builds reputation. Code signing is a separate step.
 There is nothing to tag. `.github/workflows/build-windows.yml` runs on every
 push to `main` or a `claude/**` branch: it runs the tests, builds the
 executable, makes the built `.exe` self-test itself, and republishes it to a
-fixed release tag. Bump `VERSION` when the version should change; the build
-identifier moves on its own.
+fixed release tag.
+
+`VERSION` is bumped in the same commit as the change it describes:
+
+| Change | Bump | |
+| --- | --- | --- |
+| Any push — bug fix, docs, refactor | patch | `1.0.0 → 1.0.1` |
+| A significant feature added, removed or overhauled | minor | `1.0.1 → 1.1.0` |
+| The whole app overhauled | major | `1.1.0 → 2.0.0` |
+
+```
+python scripts/bump_version.py patch    # or minor / major
+```
+
+A major bump is the maintainer's call only. The build identifier moves on its
+own every build, independently of `VERSION`.
 
 The download link is therefore permanent:
 
