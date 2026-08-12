@@ -71,6 +71,17 @@ were hard to learn and are easy to get wrong:
   the parent exits and deletes it. It also made the update self-test execute
   the running build instead of the downloaded one. Use
   `installer.child_environment()` for every subprocess.
+
+  Confirmed with a throwaway onefile app that spawns itself and prints
+  `sys._MEIPASS`: inherited env gave the child the parent's directory,
+  scrubbed env made it extract its own. Rebuild that probe rather than
+  theorising if this area ever misbehaves again.
+
+  The fix only works in the process doing the *launching*, and the child's
+  environment is identical either way — same `_MEIPASS`, same
+  `sys.executable`, same variables — so an incoming build cannot detect the
+  situation and defend itself. Any release that fixes this cannot fix the
+  upgrade *onto* itself; the first clean restart is the one after.
 - **Do not re-export a name from `autobom/__init__.py` that matches a
   submodule.** `from .version import version` made `from autobom import
   version` hand back the function, so `version.build_info` raised. Cost two

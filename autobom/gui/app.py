@@ -456,6 +456,9 @@ class MainWindow(QMainWindow):
                 QMessageBox.StandardButton.Yes,
             )
             if answer == QMessageBox.StandardButton.Yes:
+                # survived() deliberately waits a moment, so say why.
+                self.statusBar().showMessage("Restarting AutoBOM…")
+                QApplication.processEvents()
                 try:
                     process = installer.relaunch(Path(path))
                 except OSError as exc:
