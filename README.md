@@ -18,14 +18,14 @@ time.
 4. If the cross-check finds a mismatch, a **⚠️ FLAGS — REVIEW REQUIRED** dialog
    explains it and waits. Nothing is written until you choose *Add missing
    files* or *Ignore and continue*.
-5. Pick where to save. You get `<job>_BOM_Quantities.xlsx`.
+5. Pick where to save. You get `<job> BOM Quantities.xlsx`.
 
 ### Command line
 
 The same engine runs headless, which is handy for batch jobs:
 
 ```
-python -m autobom path/to/job-folder -o 8701_BOM_Quantities.xlsx
+python -m autobom path/to/job-folder -o "8701 BOM Quantities.xlsx"
 ```
 
 Files are sorted into BOMs and ILs by name (anything starting `IL` is an IL);

@@ -43,7 +43,8 @@ were hard to learn and are easy to get wrong:
 - **Summary totals group by thickness, not by sheet**, so an F part counts
   toward its own thickness and the category rows add up to the grand total.
   This is why the All sheet's `1/8"` row can exceed the `1-8` sheet's total.
-- The workbook is `<job>_BOM_Quantities.xlsx`. No `OUTPUT` prefix.
+- The workbook is `<job> BOM Quantities.xlsx` — spaces, no underscores, no
+  `OUTPUT` prefix. The rule lives in `autobom/core/naming.py`.
 
 ## Things that have bitten before
 

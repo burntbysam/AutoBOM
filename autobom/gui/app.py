@@ -27,6 +27,7 @@ from PySide6.QtWidgets import (
 from .. import __version__
 from ..core import build_summary, process, select_sheets, write_workbook
 from ..core.models import ProcessResult
+from ..core.naming import default_workbook_name
 from ..updater.github import RELEASE_PAGE, UpdateInfo, check_for_update
 from .widgets import FileDropList, FlagsDialog, describe_flags
 
@@ -212,10 +213,7 @@ class MainWindow(QMainWindow):
 
     def _default_name(self, result: ProcessResult) -> str:
         """Name the workbook after the job number when every file agrees on one."""
-        jobs = {Path(name).stem.split("-")[0] for name in result.bom_files}
-        if len(jobs) == 1:
-            return f"{jobs.pop()}_BOM_Quantities.xlsx"
-        return "BOM_Quantities.xlsx"
+        return default_workbook_name(result.bom_files)
 
     def _save(self, result: ProcessResult) -> None:
         suggested = str(Path.home() / self._default_name(result))
