@@ -60,6 +60,13 @@ A bus section is `8701-01101-I` — five digits *with* a leading zero — so it
 never matches those patterns, and a bus section BOM you forgot to send is still
 caught as FLAG 2 rather than quietly becoming one standard sheet.
 
+**Missing size** — a `SHEET,AL` row whose description carries no WxH is
+counted at the standard **60x120** sheet rather than skipped; a skipped row is
+a missing part on the floor. The run reports every row it assumed, in the
+console and the app's log, so a defaulted size is visible and correctable.
+A row with no readable thickness is still skipped and warned about — there is
+no bucket to put it in.
+
 **Never counted** — any row whose description is `COVER JOINER CHANNEL` is
 dropped, in a BOM or an IL, whatever it is attached to. The run reports each
 row it removed. The list lives in `EXCLUDED_DESCRIPTIONS` in

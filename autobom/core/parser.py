@@ -11,6 +11,7 @@ import re
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 
+from .classify import STANDARD_HEIGHT, STANDARD_WIDTH
 from .models import BomLine, IlLine, ParseIssue
 
 SHEET_AL_PREFIX = "SHEET,AL"
@@ -130,6 +131,7 @@ def parse_bom(
     path: Path,
     issues: list[ParseIssue] | None = None,
     excluded: list[ParseIssue] | None = None,
+    defaulted: list[ParseIssue] | None = None,
 ) -> list[BomLine]:
     """Read one bus section BOM, keeping only sheet aluminium rows.
 
@@ -137,6 +139,7 @@ def parse_bom(
     """
     issues = issues if issues is not None else []
     excluded = excluded if excluded is not None else []
+    defaulted = defaulted if defaulted is not None else []
     filename = path.name
     key = assembly_key(path.stem)
     lines: list[BomLine] = []
@@ -169,8 +172,11 @@ def parse_bom(
             continue
         size = parse_size(description)
         if size is None:
-            issues.append(ParseIssue(filename, number, f"no WxH size in {description!r}"))
-            continue
+            # A sheet row with no WxH in its description is counted at the
+            # standard sheet, not dropped — a skipped row is a missing part on
+            # the floor. Recorded so the run can say which rows it assumed.
+            defaulted.append(ParseIssue(filename, number, description.strip()))
+            size = (STANDARD_WIDTH, STANDARD_HEIGHT)
 
         lines.append(
             BomLine(

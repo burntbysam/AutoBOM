@@ -40,6 +40,10 @@ were hard to learn and are easy to get wrong:
   section BOM is still caught as FLAG 2 instead of silently becoming one sheet.
 - **`COVER JOINER CHANNEL` is never counted**, in a BOM or an IL. See
   `EXCLUDED_DESCRIPTIONS` in `autobom/core/parser.py`.
+- **A `SHEET,AL` row with no WxH is counted at 60x120, not skipped** — the
+  maintainer's call: a skipped row is a missing part on the floor. Each
+  assumed row is reported (`result.defaulted`). Missing thickness still
+  skips.
 - **Summary totals group by thickness, not by sheet**, so an F part counts
   toward its own thickness and the category rows add up to the grand total.
   This is why the All sheet's `1/8"` row can exceed the `1-8` sheet's total.

@@ -137,15 +137,78 @@ class TestParseBom:
             [
                 "1|x|SHEET,AL,SMOOTH,3003,.125,60x120|X||",
                 "2|1|SHEET,AL,SMOOTH,3003,60x120|X||",
-                "3|1|SHEET,AL,SMOOTH,3003,.125|X||",
             ],
         )
         issues: list = []
         assert parse_bom(path, issues) == []
-        assert len(issues) == 3
+        assert len(issues) == 2
         assert "quantity" in issues[0].detail
         assert "thickness" in issues[1].detail
-        assert "size" in issues[2].detail
+
+
+class TestMissingSizeDefaults:
+    """A SHEET,AL row with no WxH is counted at 60x120, never skipped.
+
+    A skipped row is a missing part on the shop floor; an assumed one is at
+    least visible and correctable.
+    """
+
+    def test_counted_at_the_standard_sheet(self, tmp_path):
+        path = write_csv(
+            tmp_path,
+            "8701-01101-I.csv",
+            ["1|2|SHEET,AL,SMOOTH,3003,.125|X|COVER|"],
+        )
+        lines = parse_bom(path)
+        assert len(lines) == 1
+        assert (lines[0].width, lines[0].height) == (Decimal(60), Decimal(120))
+        assert lines[0].item_quantity == Decimal(2)
+
+    def test_reported_not_silent(self, tmp_path):
+        path = write_csv(
+            tmp_path,
+            "8701-01101-I.csv",
+            ["1|2|SHEET,AL,SMOOTH,3003,.125|X|COVER|"],
+        )
+        defaulted: list = []
+        parse_bom(path, defaulted=defaulted)
+        assert len(defaulted) == 1
+        assert defaulted[0].line_number == 2
+        assert "SHEET,AL" in defaulted[0].detail
+
+    def test_not_treated_as_a_parse_issue(self, tmp_path):
+        path = write_csv(
+            tmp_path,
+            "8701-01101-I.csv",
+            ["1|2|SHEET,AL,SMOOTH,3003,.125|X|COVER|"],
+        )
+        issues: list = []
+        parse_bom(path, issues)
+        assert issues == []
+
+    def test_a_row_with_a_real_size_is_not_defaulted(self, tmp_path):
+        path = write_csv(
+            tmp_path,
+            "8701-01101-I.csv",
+            ["1|1|SHEET,AL,SMOOTH,3003,.125,72x144|X|COVER|"],
+        )
+        defaulted: list = []
+        lines = parse_bom(path, defaulted=defaulted)
+        assert defaulted == []
+        assert (lines[0].width, lines[0].height) == (Decimal(72), Decimal(144))
+
+    def test_missing_thickness_is_still_skipped(self, tmp_path):
+        # Only the size defaults; a row with no thickness has no bucket at all
+        # and stays a reported skip.
+        path = write_csv(
+            tmp_path,
+            "8701-01101-I.csv",
+            ["1|1|SHEET,AL,SMOOTH,3003|X|COVER|"],
+        )
+        issues: list = []
+        assert parse_bom(path, issues) == []
+        assert len(issues) == 1
+        assert "thickness" in issues[0].detail
 
 
 class TestParseIl:

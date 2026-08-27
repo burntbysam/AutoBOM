@@ -103,5 +103,8 @@ class ProcessResult:
     # Rows dropped by the never-count description list, kept so the run can
     # report what it removed rather than silently shrinking the output.
     excluded: list[ParseIssue] = field(default_factory=list)
+    # SHEET,AL rows with no WxH in the description, counted at the standard
+    # 60x120 sheet. Reported so an assumed size is visible, never silent.
+    defaulted: list[ParseIssue] = field(default_factory=list)
     bom_files: list[str] = field(default_factory=list)
     il_files: list[str] = field(default_factory=list)

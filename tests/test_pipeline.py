@@ -218,6 +218,25 @@ class TestIndividualParts:
         assert "8701-02101-I" not in {part.part_number for part in result.parts}
 
 
+class TestDefaultedSizes:
+    def test_a_no_size_row_flows_through_as_60x120_T(self, tmp_path):
+        write_csv(
+            tmp_path,
+            "8701-01101-I.csv",
+            ["1|3|SHEET,AL,SMOOTH,3003,.125|X|COVER|"],
+        )
+        write_csv(tmp_path, "IL-8701-011.csv", ["1|2|BUS|8701-01101-I|"])
+        result = run(tmp_path)
+        part = {p.part_number: p for p in result.parts}["8701-1101-1"]
+        assert (part.size, part.fits_trumpf, part.thickness_label) == (
+            "60x120",
+            "T",
+            '1/8"',
+        )
+        assert part.quantity == Decimal(6)  # 3 x 2, multiplied like any row
+        assert len(result.defaulted) == 1
+
+
 class TestExcludedDescriptions:
     def test_cover_joiner_channel_is_dropped(self, tmp_path):
         write_csv(tmp_path, "8701-01101-I.csv", [f"1|1|{EIGHTH_FITS}|X|A|"])

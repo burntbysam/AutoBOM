@@ -116,11 +116,12 @@ def process(bom_paths: list[Path], il_paths: list[Path]) -> ProcessResult:
     """Run the whole workflow over already-collected files."""
     issues: list[ParseIssue] = []
     excluded: list[ParseIssue] = []
+    defaulted: list[ParseIssue] = []
 
     bom_lines: list[BomLine] = []
     key_to_filename: dict[str, str] = {}
     for path in bom_paths:
-        bom_lines.extend(parse_bom(path, issues, excluded))
+        bom_lines.extend(parse_bom(path, issues, excluded, defaulted))
         # Recorded for every BOM handed in, even one with no SHEET,AL rows, so
         # that FLAG 1 still reports it when the IL never references it.
         key_to_filename.setdefault(path.stem.strip().upper(), path.name)
@@ -137,6 +138,7 @@ def process(bom_paths: list[Path], il_paths: list[Path]) -> ProcessResult:
         other_parts=[part for part in parts if part.thickness_label == THICKNESS_OTHER],
         issues=issues,
         excluded=excluded,
+        defaulted=defaulted,
         bom_files=[path.name for path in bom_paths],
         il_files=[path.name for path in il_paths],
     )

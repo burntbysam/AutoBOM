@@ -71,6 +71,19 @@ class TestMain:
         rows = list(load_workbook(out)["All"].iter_rows(min_row=2, values_only=True))
         assert (2, "JB-2724-06", '1/8"', "60x120", "T") in rows
 
+    def test_defaulted_sizes_are_reported_on_stderr(self, tmp_path, capsys):
+        write_csv(
+            tmp_path,
+            "8701-01101-I.csv",
+            [f"1|1|{EIGHTH}|X|A|", "2|2|SHEET,AL,SMOOTH,3003,.125|X|A|"],
+        )
+        write_csv(tmp_path, "IL-8701-011.csv", ["1|1|BUS|8701-01101-I|"])
+        out = tmp_path / "out.xlsx"
+        assert main([str(tmp_path), "-o", str(out)]) == 0
+        assert "counted as 60x120" in capsys.readouterr().err
+        rows = list(load_workbook(out)["All"].iter_rows(min_row=2, values_only=True))
+        assert (2, "8701-1101-2", '1/8"', "60x120", "T") in rows
+
     def test_excluded_rows_are_reported_on_stderr(self, tmp_path, capsys):
         job = make_job(tmp_path, extra_il_rows=["2|4|COVER JOINER CHANNEL|JB-2705-27|"])
         assert main([str(job), "-o", str(tmp_path / "out.xlsx")]) == 0

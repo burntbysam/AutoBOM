@@ -256,6 +256,11 @@ class MainWindow(QMainWindow):
             self._append(
                 f"Excluded {row.source_file} line {row.line_number}: {row.detail}"
             )
+        for row in result.defaulted:
+            self._append(
+                f"No size on {row.source_file} line {row.line_number}: "
+                f"{row.detail} — counted as 60x120"
+            )
 
         if result.cross_check.has_flags:
             self._append(describe_flags(result.cross_check))

@@ -108,6 +108,13 @@ def main(argv: list[str] | None = None) -> int:
             file=sys.stderr,
         )
 
+    for row in result.defaulted:
+        print(
+            f"no size given, counted as 60x120: {row.source_file} "
+            f"line {row.line_number}: {row.detail}",
+            file=sys.stderr,
+        )
+
     if result.cross_check.has_flags:
         print("\n⚠️  FLAGS — REVIEW REQUIRED")
         for filename in result.cross_check.boms_without_il:

@@ -25,6 +25,7 @@ _BOM_ROWS = [
     "5|9|BAR,RE,CU,3/8X10|CAL5|CONDUCTOR|",                # not sheet aluminium
     "6|1|SHEET,AL,SMOOTH,3003,.125,61.5x120|CAL6|COVER|",  # the exact machine maximum
     "7|1|SHEET,AL,SMOOTH,3003,.125,60x133.13|CAL7|COVER|", # over the 120 length limit
+    "8|2|SHEET,AL,SMOOTH,3003,.125|CAL8|COVER|",           # no size: defaults to 60x120
 ]
 _IL_ROWS = [
     "1|2|BUS SECTION|8701-01101-I|",
@@ -43,19 +44,21 @@ _EXPECTED_ROWS = {
     # even though it is narrow, and was a T part under the old 133.5 limit.
     "8701-1101-6": (Decimal(2), '1/8"', "61.5x120", "T"),
     "8701-1101-7": (Decimal(2), '1/8"', "60x133.13", "F"),
+    # No WxH on the BOM line: counted at the standard sheet, never skipped.
+    "8701-1101-8": (Decimal(4), '1/8"', "60x120", "T"),
     "JB-2724-06": (Decimal(3), '1/8"', "60x120", "T"),
     "8701-300-I": (Decimal(6), '1/8"', "60x120", "T"),
 }
-_EXPECTED_SHEET_COUNTS = {"1-8": 4, "3-16": 1, "F Parts": 2, "Other": 1, "All": 8}
+_EXPECTED_SHEET_COUNTS = {"1-8": 5, "3-16": 1, "F Parts": 2, "Other": 1, "All": 9}
 
 # label -> (line items, pieces). Grouped by thickness, so the 1/8" row includes
 # the F part that does not fit the Trumpf.
 _EXPECTED_SUMMARY = {
-    '1/8"': (6, 19),
+    '1/8"': (7, 23),
     '3/16"': (1, 2),
-    '1/8" + 3/16" total': (7, 21),
+    '1/8" + 3/16" total': (8, 25),
     "OTHER thickness": (1, 2),
-    "Grand total": (8, 23),
+    "Grand total": (9, 27),
 }
 
 
@@ -84,6 +87,10 @@ def run_selftest() -> tuple[bool, list[str]]:
         if len(result.excluded) != 1:
             failures.append(f"expected 1 excluded row, got {len(result.excluded)}")
         report.append(f"excluded rows:       {len(result.excluded)} (COVER JOINER CHANNEL)")
+
+        if len(result.defaulted) != 1:
+            failures.append(f"expected 1 defaulted row, got {len(result.defaulted)}")
+        report.append(f"defaulted sizes:     {len(result.defaulted)} (counted as 60x120)")
 
         if result.cross_check.has_flags:
             failures.append("unexpected cross-check flags on the synthetic job")
