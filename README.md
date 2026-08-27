@@ -40,8 +40,9 @@ exit code 1 unless you pass `--ignore-flags`.
 | --- | --- |
 | ITEM NUMBER, ITEM QUANTITY, DESCRIPTION, INVENTORY CODE, SHOP TYPE | LINE NUMBER, ASSEMBLY QUANTITY, DESCRIPTION, ASSEMBLY NUMBER, SHOP CODE |
 
-**Filtering** — only rows whose DESCRIPTION starts with `SHEET,AL` are kept, and
-that check is case-sensitive.
+**Filtering** — only rows whose DESCRIPTION starts with `SHEET,AL` are kept.
+The check is case-sensitive, but spacing around the comma is not meaningful:
+`SHEET, AL, ...` (job 8763's style) matches too.
 
 **Part numbers** — built from the filename and item number:
 `8551-07127-I.csv` + item `3` → `8551-7127-3` (drop the extension, drop the
@@ -59,6 +60,9 @@ Their part number is the assembly number verbatim.
 A bus section is `8701-01101-I` — five digits *with* a leading zero — so it
 never matches those patterns, and a bus section BOM you forgot to send is still
 caught as FLAG 2 rather than quietly becoming one standard sheet.
+
+Sizes may be written plain (`60x120`) or with inch marks and a capital X
+(`92"X120"`, `69.50"X120"`); both parse as real dimensions.
 
 **Missing size** — a `SHEET,AL` row whose description carries no WxH is
 counted at the standard **60x120** sheet rather than skipped; a skipped row is

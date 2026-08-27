@@ -83,6 +83,68 @@ class TestParseSize:
         assert parse_size("SHEET,AL,SMOOTH,3003,.125") is None
 
 
+class TestJob8763Formats:
+    """Job 8763's export writes the same data with different punctuation.
+
+    Regression: every sheet row in the job was silently filtered out and the
+    workbook came back with a single line item (the IL's individual part),
+    because the prefix check demanded "SHEET,AL" with no space.
+    """
+
+    def test_prefix_with_spaces_after_the_comma_is_kept(self, tmp_path):
+        path = write_csv(
+            tmp_path,
+            "8763-01101-I.csv",
+            ['1|1|SHEET, AL, .190, 3003, 92"X120"|CAL41023074|HOUSING|'],
+        )
+        lines = parse_bom(path)
+        assert [line.part_number for line in lines] == ["8763-1101-1"]
+
+    def test_lowercase_prefix_is_still_rejected(self, tmp_path):
+        path = write_csv(
+            tmp_path,
+            "8763-01101-I.csv",
+            ['1|1|sheet, al, .190, 3003, 92"X120"|X||'],
+        )
+        assert parse_bom(path) == []
+
+    def test_inch_marks_and_capital_x_parse_as_a_real_size(self):
+        assert parse_size('SHEET, AL, .190, 3003, 92"X120"') == (
+            Decimal("92"),
+            Decimal("120"),
+        )
+
+    def test_decimal_size_with_inch_marks(self):
+        assert parse_size('SHEET, AL, .125, 3003, 69.50"X120"') == (
+            Decimal("69.50"),
+            Decimal("120"),
+        )
+
+    def test_thickness_before_the_alloy_still_reads_first_decimal(self):
+        assert parse_thickness('SHEET, AL, .190, 3003, 92"X120"') == Decimal("0.190")
+
+    def test_inch_marked_size_is_not_mistaken_for_missing(self, tmp_path):
+        """The 60x120 default must never swallow a real 92-inch sheet."""
+        path = write_csv(
+            tmp_path,
+            "8763-01101-I.csv",
+            ['1|1|SHEET, AL, .190, 3003, 92"X120"|X|HOUSING|'],
+        )
+        defaulted: list = []
+        lines = parse_bom(path, defaulted=defaulted)
+        assert defaulted == []
+        assert (lines[0].width, lines[0].height) == (Decimal("92"), Decimal("120"))
+
+    def test_trailing_space_in_description(self, tmp_path):
+        # 8763-01102 has rows ending 'X120" ' with a trailing blank.
+        path = write_csv(
+            tmp_path,
+            "8763-01102-I.csv",
+            ['1|1|SHEET, AL, .190, 3003, 92"X120" |CAL41023074|HOUSING|'],
+        )
+        assert len(parse_bom(path)) == 1
+
+
 class TestAssemblyKey:
     @pytest.mark.parametrize(
         "value", ["8701-01101-I", " 8701-01101-i ", "8701-01101-I.csv", "8701-01101-i.CSV"]

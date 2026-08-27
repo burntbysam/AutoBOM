@@ -94,6 +94,12 @@ were hard to learn and are easy to get wrong:
   submodule.** `from .version import version` made `from autobom import
   version` hand back the function, so `version.build_info` raised. Cost two
   debugging detours before the shadowing was removed.
+- **Description punctuation varies by job.** 8701 wrote `SHEET,AL,...,60x120`;
+  8763 wrote `SHEET, AL, .190, 3003, 92"X120"` — spaces after commas, inch
+  marks, capital X. The strict prefix match silently dropped every sheet row
+  of job 8763 and the workbook came out with one line item. Matching is now
+  whitespace-tolerant around the comma and sizes may carry inch marks; any
+  new job's first run deserves a glance at the line-item count.
 - **`urlparse` reads a Windows drive letter as a URL scheme.** `C:\x` parses as
   scheme `c`. Any scheme shorter than two characters is a drive, not a protocol.
 - **Verify against real output before believing a diff.** The original reference

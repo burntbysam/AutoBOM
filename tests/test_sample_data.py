@@ -13,6 +13,8 @@ import pytest
 from autobom.core import process, select_sheets
 from autobom.core.classify import is_individual_part
 
+from .conftest import DATA_DIR
+
 REFERENCE = "REFERENCE_8701_prior_llm_run.xlsx"
 
 
@@ -82,6 +84,75 @@ class TestJob8701:
         ]
         assert len(bus_sections) == 26
         assert all(part.quantity == Decimal(1) for part in bus_sections)
+
+
+@pytest.fixture
+def result_8763():
+    directory = DATA_DIR / "8763"
+    boms = sorted(
+        path
+        for path in directory.glob("*.csv")
+        if not path.stem.upper().startswith("IL")
+    )
+    if not boms:
+        pytest.skip("no local 8763 sample data in tests/data/8763 (not committed)")
+    return process(boms, sorted(directory.glob("IL-*.csv")))
+
+
+class TestJob8763:
+    """Regression: this job once produced a single line item.
+
+    Its descriptions use spaces after commas and inch-marked sizes
+    (``SHEET, AL, .190, 3003, 92"X120"``), and the old strict prefix filtered
+    every sheet row out, leaving only the IL's individual part.
+    """
+
+    def test_every_sheet_row_survives_the_filter(self, result_8763):
+        # 4 sheet rows in 01101 + 10 in 01102 + the JB individual part.
+        assert len(result_8763.parts) == 15
+
+    def test_no_row_needed_a_defaulted_size(self, result_8763):
+        # The inch-marked sizes must parse as real sizes, not fall back to
+        # 60x120 -- a 92-inch sheet counted as a standard one goes to the
+        # wrong machine.
+        assert result_8763.defaulted == []
+
+    def test_no_flags_and_no_issues(self, result_8763):
+        assert result_8763.issues == []
+        assert result_8763.cross_check.has_flags is False
+
+    def test_the_190_housings_are_three_sixteenth_f_parts(self, result_8763):
+        parts = {part.part_number: part for part in result_8763.parts}
+        for number in (
+            "8763-1101-1",
+            "8763-1102-1",
+            "8763-1102-2",
+            "8763-1102-3",
+            "8763-1102-4",
+        ):
+            assert parts[number].thickness_label == '3/16"'
+            assert parts[number].size == "92x120"
+            assert parts[number].fits_trumpf == "F"
+
+    def test_the_decimal_covers_keep_their_real_size(self, result_8763):
+        parts = {part.part_number: part for part in result_8763.parts}
+        for number in ("8763-1102-5", "8763-1102-6"):
+            assert parts[number].size == "69.5x120"
+            assert parts[number].fits_trumpf == "F"
+
+    def test_sheet_totals(self, result_8763):
+        sheets = select_sheets(result_8763.parts)
+        assert {name: len(rows) for name, rows in sheets.items()} == {
+            "1-8": 8,
+            "3-16": 0,
+            "F Parts": 7,
+            "Other": 0,
+            "All": 15,
+        }
+
+    def test_the_individual_part_is_present(self, result_8763):
+        parts = {part.part_number: part for part in result_8763.parts}
+        assert parts["JB-2401-01"].quantity == Decimal(1)
 
 
 class TestAgainstPriorRun:

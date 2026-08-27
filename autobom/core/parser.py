@@ -15,6 +15,10 @@ from .classify import STANDARD_HEIGHT, STANDARD_WIDTH
 from .models import BomLine, IlLine, ParseIssue
 
 SHEET_AL_PREFIX = "SHEET,AL"
+# Different jobs export the same prefix with different spacing: job 8701 wrote
+# "SHEET,AL,..." and job 8763 wrote "SHEET, AL, ...". The comma may carry
+# whitespace on either side; the words stay case-sensitive per the spec.
+_SHEET_AL_RE = re.compile(r"^SHEET\s*,\s*AL")
 
 # Descriptions that never reach the workbook, whichever file they arrive in.
 # Matched on the whole description, case-insensitively, after collapsing runs
@@ -23,8 +27,9 @@ EXCLUDED_DESCRIPTIONS = ("COVER JOINER CHANNEL",)
 
 # First decimal number in the description: .125, 0.190, 1.25 all match.
 _THICKNESS_RE = re.compile(r"\d*\.\d+")
-# Dimensions in WxH form; either side may carry decimals (60x133.13).
-_SIZE_RE = re.compile(r"(\d+(?:\.\d+)?)\s*[xX]\s*(\d+(?:\.\d+)?)")
+# Dimensions in WxH form; either side may carry decimals (60x133.13) and
+# inch marks (92"X120"), and the separator may be either case.
+_SIZE_RE = re.compile(r"(\d+(?:\.\d+)?)\s*[\"”]?\s*[xX]\s*(\d+(?:\.\d+)?)")
 
 _ENCODINGS = ("utf-8-sig", "cp1252", "latin-1")
 
@@ -149,8 +154,9 @@ def parse_bom(
             issues.append(ParseIssue(filename, number, "fewer than 3 columns"))
             continue
         item_number, quantity_text, description = fields[0], fields[1], fields[2]
-        # Case-sensitive per SPEC rule 1.
-        if not description.startswith(SHEET_AL_PREFIX):
+        # Case-sensitive per SPEC rule 1; spacing around the comma is not
+        # meaningful (see _SHEET_AL_RE).
+        if not _SHEET_AL_RE.match(description):
             continue
         # Checked after the SHEET,AL filter so the report only mentions rows
         # the exclusion actually removed.

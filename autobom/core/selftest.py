@@ -26,6 +26,8 @@ _BOM_ROWS = [
     "6|1|SHEET,AL,SMOOTH,3003,.125,61.5x120|CAL6|COVER|",  # the exact machine maximum
     "7|1|SHEET,AL,SMOOTH,3003,.125,60x133.13|CAL7|COVER|", # over the 120 length limit
     "8|2|SHEET,AL,SMOOTH,3003,.125|CAL8|COVER|",           # no size: defaults to 60x120
+    # Job 8763's punctuation: spaces after commas, inch marks, capital X.
+    '9|1|SHEET, AL, .190, 3003, 92"X120"|CAL9|HOUSING|',
 ]
 _IL_ROWS = [
     "1|2|BUS SECTION|8701-01101-I|",
@@ -46,19 +48,21 @@ _EXPECTED_ROWS = {
     "8701-1101-7": (Decimal(2), '1/8"', "60x133.13", "F"),
     # No WxH on the BOM line: counted at the standard sheet, never skipped.
     "8701-1101-8": (Decimal(4), '1/8"', "60x120", "T"),
+    # Job 8763's punctuation must parse as a real 92x120, never default.
+    "8701-1101-9": (Decimal(2), '3/16"', "92x120", "F"),
     "JB-2724-06": (Decimal(3), '1/8"', "60x120", "T"),
     "8701-300-I": (Decimal(6), '1/8"', "60x120", "T"),
 }
-_EXPECTED_SHEET_COUNTS = {"1-8": 5, "3-16": 1, "F Parts": 2, "Other": 1, "All": 9}
+_EXPECTED_SHEET_COUNTS = {"1-8": 5, "3-16": 1, "F Parts": 3, "Other": 1, "All": 10}
 
 # label -> (line items, pieces). Grouped by thickness, so the 1/8" row includes
 # the F part that does not fit the Trumpf.
 _EXPECTED_SUMMARY = {
     '1/8"': (7, 23),
-    '3/16"': (1, 2),
-    '1/8" + 3/16" total': (8, 25),
+    '3/16"': (2, 4),
+    '1/8" + 3/16" total': (9, 27),
     "OTHER thickness": (1, 2),
-    "Grand total": (9, 27),
+    "Grand total": (10, 29),
 }
 
 
