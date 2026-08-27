@@ -51,6 +51,11 @@ were hard to learn and are easy to get wrong:
   Anything larger is an F part. Earlier builds used 60 x 133.5, which was
   wrong in both directions — a long narrow sheet such as 60x133.13 was being
   sent to a machine that cannot take it. `autobom/core/classify.py`.
+- **Sorting is natural, not lexicographic** — maintainer's call, overriding
+  the SPEC's "alphanumeric": digit runs compare as numbers so `-2` < `-10`.
+  Consequence: `8701-300-I` sorts before `8701-1101-1`, where string sort
+  happened to put the 300 series after the bus sections.
+  `natural_sort_key` in `autobom/core/pipeline.py`.
 - The workbook is `<job> BOM Quantities.xlsx` — spaces, no underscores, no
   `OUTPUT` prefix. The rule lives in `autobom/core/naming.py`.
 

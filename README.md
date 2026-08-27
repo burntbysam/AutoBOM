@@ -85,7 +85,10 @@ orientation; anything over that is `F`. Both limits are inclusive, so 61.5x120
 itself fits. This is independent of thickness.
 
 **Output** — five sheets, always, with columns `Qty | Part # | Thickness | Size
-| Fits Trumpf` and every sheet sorted by Part #:
+| Fits Trumpf` and every sheet sorted by Part #. The sort is natural: digit
+runs compare as numbers, so `-2` through `-9` come before `-10`, and `-99`
+before `-100`. This also means `8701-300-I` sorts before `8701-1101-1`
+(300 < 1101), where a plain string sort happened to put the 300 series last:
 
 | Sheet | Contents |
 | --- | --- |

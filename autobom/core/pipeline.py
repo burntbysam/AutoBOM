@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from collections import OrderedDict
 from decimal import Decimal
 from pathlib import Path
@@ -107,9 +108,27 @@ def aggregate(bom_lines: list[BomLine], il_lines: list[IlLine]) -> list[Part]:
     return sort_parts(parts)
 
 
+_DIGIT_RUNS = re.compile(r"(\d+)")
+
+
+def natural_sort_key(text: str):
+    """Sort key comparing digit runs as numbers: -2 before -10 before -100.
+
+    A plain string sort puts 8763-1102-10 before 8763-1102-2, which reads
+    wrong on the floor. Splitting on digit runs keeps text chunks at even
+    positions and numbers at odd ones, so like compares with like; the raw
+    string breaks ties (JB-2401-01 vs JB-2401-1) deterministically.
+    """
+    chunks = _DIGIT_RUNS.split(text)
+    return (
+        [int(chunk) if chunk.isdigit() else chunk for chunk in chunks],
+        text,
+    )
+
+
 def sort_parts(parts: list[Part]) -> list[Part]:
-    """PHASE 5 sorting: alphanumeric (lexicographic) by Part #."""
-    return sorted(parts, key=lambda part: part.part_number)
+    """PHASE 5 sorting: by Part #, digit runs compared numerically."""
+    return sorted(parts, key=lambda part: natural_sort_key(part.part_number))
 
 
 def process(bom_paths: list[Path], il_paths: list[Path]) -> ProcessResult:

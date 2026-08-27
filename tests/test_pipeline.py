@@ -91,10 +91,37 @@ class TestClassificationRouting:
 
 
 class TestSorting:
-    def test_parts_sorted_alphanumerically_by_part_number(self, job):
+    def test_single_digit_items_sort_as_before(self, job):
         result = run(job)
         numbers = [part.part_number for part in result.parts]
         assert numbers == sorted(numbers)
+
+    def test_double_digit_items_sort_numerically(self, tmp_path):
+        """Regression: string sort put -10 before -2 once items passed 9."""
+        rows = [
+            f"{item}|1|{EIGHTH_FITS}|X|A|" for item in (1, 2, 9, 10, 20, 100)
+        ]
+        write_csv(tmp_path, "8763-01102-I.csv", rows)
+        write_csv(tmp_path, "IL-8763-011.csv", ["1|1|BUS|8763-01102-I|"])
+        numbers = [part.part_number for part in run(tmp_path).parts]
+        assert numbers == [
+            "8763-1102-1",
+            "8763-1102-2",
+            "8763-1102-9",
+            "8763-1102-10",
+            "8763-1102-20",
+            "8763-1102-100",
+        ]
+
+    def test_jb_parts_still_sort_after_numeric_part_numbers(self, tmp_path):
+        write_csv(tmp_path, "8763-01101-I.csv", [f"1|1|{EIGHTH_FITS}|X|A|"])
+        write_csv(
+            tmp_path,
+            "IL-8763-011.csv",
+            ["1|1|BUS|8763-01101-I|", "2|1|COVER|JB-2401-01|"],
+        )
+        numbers = [part.part_number for part in run(tmp_path).parts]
+        assert numbers == ["8763-1101-1", "JB-2401-01"]
 
 
 class TestCrossCheck:
